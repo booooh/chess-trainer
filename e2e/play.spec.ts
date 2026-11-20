@@ -38,7 +38,7 @@ test('play a few moves as white against the real Maia', async ({ page }) => {
 test('as black, Maia opens; resigning saves the game to IndexedDB', async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto('./');
-  await page.getByRole('radio', { name: 'Black' }).check({ force: true });
+  await page.getByRole('radio', { name: 'Black' }).check();
   await page.getByRole('combobox', { name: /opponent strength/i }).selectOption('600');
   await page.getByRole('button', { name: 'Start game' }).click();
 
