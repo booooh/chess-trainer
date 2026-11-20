@@ -58,10 +58,11 @@ export class GameSession {
     return this.snapshot;
   }
 
-  subscribe(listener: () => void): () => void {
+  /** An arrow property, so it can be passed around unbound (e.g. to useSyncExternalStore). */
+  subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
-  }
+  };
 
   /** Starts the game; if the opponent has white, waits for its first move. */
   async start(): Promise<void> {

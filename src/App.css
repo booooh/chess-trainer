@@ -42,3 +42,153 @@ body {
 .app-footer a {
   color: inherit;
 }
+
+/* --- Panels below the board ------------------------------------------------------- */
+:root {
+  --panel: #3a332d;
+  --line: #554b42;
+  --accent: #b58863;
+  --accent-fg: #1e1a17;
+  --danger: #c0534a;
+  --muted: #b9aea3;
+}
+
+.panel {
+  width: min(100vw - 32px, 640px);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+button,
+select {
+  font: inherit;
+  color: var(--fg);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  min-height: 44px;
+  padding: 0 1rem;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+}
+
+button.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+button:focus-visible,
+select:focus-visible,
+.segmented label:has(input:focus-visible) {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+}
+
+/* Colour choice: radio buttons styled as a segmented control. */
+.segmented {
+  display: flex;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  gap: 0;
+}
+
+.segmented legend {
+  margin-bottom: 0.4rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.segmented label {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  min-height: 44px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.segmented label:first-of-type {
+  border-radius: 8px 0 0 8px;
+}
+
+.segmented label:last-of-type {
+  border-radius: 0 8px 8px 0;
+}
+
+.segmented label.selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+}
+
+.segmented input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.hint,
+.model-status,
+.opponent {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.model-status.error {
+  color: #f0a39b;
+}
+
+.status {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  min-height: 1.5em;
+}
+
+.check {
+  color: #f0a39b;
+}
+
+.promotion,
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.promotion button,
+.actions button {
+  flex: 1;
+}
+
+.moves {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  font-variant-numeric: tabular-nums;
+  max-height: 6.5rem;
+  overflow-y: auto;
+}

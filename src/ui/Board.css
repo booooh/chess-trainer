@@ -1,6 +1,7 @@
 /* chessground sizes itself to its container, so the container must be square. */
 .board-frame {
-  width: min(100vw, 100svh - 6rem, 640px);
+  width: min(100vw, 100svh - 14rem, 640px);
+  min-width: min(100vw, 280px);
   aspect-ratio: 1;
   margin: 0 auto;
 }
