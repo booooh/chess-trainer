@@ -1,6 +1,9 @@
 # Working on this repo
 
 ## Read first
+- `docs/STATUS.md`: where the project stands, the plan for the next phase, and working notes for
+  this cloud environment (shallow clones, Playwright browser path). Keep it updated at the end of
+  each phase or session.
 - `docs/DESIGN.md` is the source of truth for architecture and phases.
 - `docs/adr/` records why each decision was made. Don't contradict an accepted ADR; write a
   new one that supersedes it, and update the index in `docs/adr/README.md`.

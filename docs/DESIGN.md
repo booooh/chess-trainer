@@ -1,6 +1,6 @@
 # Chess Trainer — Design Document (v1)
 
-Status: Draft · Owner: Ben · Last updated: 2026-11-20
+Status: Draft · Owner: Ben · Last updated: 2026-11-20 (after phase 1)
 
 ## 1. Goals
 
@@ -85,7 +85,7 @@ unit-testable, and lets a later Rust/WASM port or a backend reuse its logic and 
 | Local LLM | WebLLM (WebGPU) with wllama (CPU) fallback | ADR-0004, phase 5 |
 | PWA | `vite-plugin-pwa` | Installable on Android, offline cache |
 | Tests | Vitest (unit), Playwright (end-to-end) | Standard for Vite projects |
-| Hosting | Cloudflare Pages (or GitHub Pages) | Free; Cloudflare lets us set headers, see ADR-0002 |
+| Hosting | GitHub Pages now (ADR-0007); Cloudflare Pages in phase 2 (ADR-0009) | Free; Cloudflare adds PR preview URLs and custom headers (ADR-0002) |
 
 ## 4. Engines
 
@@ -255,17 +255,19 @@ The API key lives only on the device and is never written into exported data.
 
 ## 9. Delivery phases
 
-| Phase | Scope | Done when |
-|---|---|---|
-| 0. Skeleton | Vite/React/TS, PWA, CI, lint, tests, deploy | Empty board installs on phone |
-| 1. Play | Board, chess.js, Maia opponent, save games | Full game vs Maia 1100 on phone |
-| 2. Hints | Stockfish worker, hint ladder, teaching line, facts + templates | Level-4 hint explains a fork correctly |
-| 3. Openings | ECO lookup, tree, stats, beginner suggestions, Explore/Deepen | Deepen mode repeats the Italian 3 games in a row |
-| 4. Online LLM | BYO-key narrator (Anthropic / OpenAI-compatible), fallback chain | Pull network → template text appears |
-| 5. Local LLM | WebLLM/wllama narrator, download UX | Works offline in airplane mode |
-| 6. Review | Post-game blunder list, eval graph | — |
-| v1.x | Timed play | — |
-| v2 | Rust backend + sync | ADR-0006 |
+Current status and the detailed plan for the next phase: [`docs/STATUS.md`](STATUS.md).
+
+| Phase | Scope | Done when | Status |
+|---|---|---|---|
+| 0. Skeleton | Vite/React/TS, PWA, CI, lint, tests, deploy | Empty board installs on phone | ✅ Done |
+| 1. Play | Board, chess.js, Maia opponent, save games | Full game vs Maia 1100 on phone | ✅ Done |
+| 2. Hints | **First: move hosting to Cloudflare Pages with PR previews (ADR-0009).** Then Stockfish worker, hint ladder, teaching line, facts + templates | PRs get a working preview URL; level-4 hint explains a fork correctly | ⏭️ Next |
+| 3. Openings | ECO lookup, tree, stats, beginner suggestions, Explore/Deepen | Deepen mode repeats the Italian 3 games in a row | |
+| 4. Online LLM | BYO-key narrator (Anthropic / OpenAI-compatible), fallback chain | Pull network → template text appears | |
+| 5. Local LLM | WebLLM/wllama narrator, download UX | Works offline in airplane mode | |
+| 6. Review | Post-game blunder list, eval graph | — | |
+| v1.x | Timed play | — | |
+| v2 | Rust backend + sync | ADR-0006 | |
 
 ## 10. Open questions
 

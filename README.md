@@ -7,7 +7,8 @@ what you've played with both colours.
 
 Runs entirely in the browser as an installable PWA, with no backend in v1.
 
-**Status:** phase 1 (play): play full games against Maia on your phone, from 400 to 1500
+**Status:** phases 0 and 1 done, phase 2 (hints) next; see [`docs/STATUS.md`](docs/STATUS.md).
+Phase 1 (play): play full games against Maia on your phone, from 400 to 1500
 (Lichess-scale ratings); finished games are saved on the device. See
 [`docs/DESIGN.md`](docs/DESIGN.md) for the plan and the
 [architecture decision records](docs/adr/README.md) for why things are the way they are.
@@ -46,6 +47,8 @@ already have instead, set `PW_CHROMIUM_PATH` to its executable.
 ## Deployment
 
 Every push to `main` that passes CI is deployed to GitHub Pages ([ADR-0007](docs/adr/0007-github-pages-first.md)).
+Phase 2 starts by moving to Cloudflare Pages so every PR gets its own preview URL
+([ADR-0009](docs/adr/0009-cloudflare-pages-previews.md), steps in [`docs/STATUS.md`](docs/STATUS.md)).
 One-time setup: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 
 To install on Android: open the site in Chrome, then menu → **Add to Home screen** / **Install app**.
