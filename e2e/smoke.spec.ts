@@ -35,3 +35,18 @@ test('is installable: manifest with icons and an active service worker', async (
   });
   expect(swActive).toBe(true);
 });
+
+test("tapping the board doesn't highlight or select the whole board", async ({ page }) => {
+  // Android Chrome draws a translucent box over any tapped clickable element, and a long press
+  // starts text selection; on a full-width board both look like "the whole board is selected".
+  await page.goto('./');
+  const style = await page.getByTestId('board').evaluate((el) => {
+    const s = getComputedStyle(el);
+    return {
+      tapHighlight: s.getPropertyValue('-webkit-tap-highlight-color'),
+      userSelect: s.userSelect || s.getPropertyValue('-webkit-user-select'),
+    };
+  });
+  // Chrome's default is rgba(51, 181, 229, 0.4): a 40% blue box over the whole board.
+  expect(style).toEqual({ tapHighlight: 'rgba(0, 0, 0, 0)', userSelect: 'none' });
+});
