@@ -1,4 +1,5 @@
 /// <reference types="vitest/config" />
+import { statSync } from 'node:fs';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
@@ -7,8 +8,12 @@ import { VitePWA } from 'vite-plugin-pwa';
 // Locally and in tests the app lives at the root.
 const base = process.env.BASE_PATH ?? '/';
 
+// The Maia model's real size, for accurate download progress (see src/workers/download.ts).
+const maiaModelBytes = statSync('node_modules/maia3-js/models/maia3_5m.onnx').size;
+
 export default defineConfig({
   base,
+  define: { __MAIA_MODEL_BYTES__: JSON.stringify(maiaModelBytes) },
   worker: { format: 'es' },
   resolve: {
     // maia3-js imports the default ONNX runtime build, which bundles WebGPU support
