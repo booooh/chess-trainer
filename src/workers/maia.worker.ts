@@ -4,6 +4,7 @@ import { Maia3 } from 'maia3-js/web';
 // Self-hosted model (see docs/spikes/maia-3.md). maia3-js's package exports don't expose the
 // file, hence the path into node_modules; Vite copies it into the build with a hashed name.
 import modelUrl from '../../node_modules/maia3-js/models/maia3_5m.onnx?url';
+import { readWithProgress } from './download';
 import type { FromWorker, ToWorker } from './maiaProtocol';
 
 const CACHE = 'maia-model-v1';
@@ -17,28 +18,15 @@ async function modelBytes(): Promise<ArrayBuffer> {
   if (cached) return cached.arrayBuffer();
 
   const res = await fetch(modelUrl);
-  if (!res.ok || !res.body) throw new Error(`Couldn't download the Maia model (HTTP ${res.status})`);
-  const total = Number(res.headers.get('content-length') ?? 0);
-  const chunks: Uint8Array[] = [];
-  let loaded = 0;
-  const reader = res.body.getReader();
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    loaded += value.byteLength;
-    post({ type: 'progress', loaded, total });
-  }
-  const bytes = new Uint8Array(loaded);
-  let offset = 0;
-  for (const c of chunks) {
-    bytes.set(c, offset);
-    offset += c.byteLength;
-  }
+  if (!res.ok) throw new Error(`Couldn't download the Maia model (HTTP ${res.status})`);
+  const bytes = await readWithProgress(res, {
+    expectedBytes: __MAIA_MODEL_BYTES__,
+    onProgress: (loaded, total) => post({ type: 'progress', loaded, total }),
+  });
   await cache.put(modelUrl, new Response(bytes, { headers: { 'content-type': 'application/octet-stream' } }));
   // Old versions of the model would otherwise stay in storage forever.
   for (const key of await caches.keys()) if (key.startsWith('maia-model-') && key !== CACHE) await caches.delete(key);
-  return bytes.buffer;
+  return bytes;
 }
 
 async function load(): Promise<void> {

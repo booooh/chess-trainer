@@ -9,4 +9,10 @@
 .board {
   width: 100%;
   height: 100%;
+  /* The board is one big tappable element. Without these, Android Chrome flashes a blue box
+     over all of it on every tap, and a long press selects it (iOS: shows the callout menu). */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
