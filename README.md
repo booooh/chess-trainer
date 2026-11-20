@@ -37,6 +37,7 @@ already have instead, set `PW_CHROMIUM_PATH` to its executable.
 | `src/core/` | Pure TypeScript domain logic, no React (lint-enforced) |
 | `src/ui/` | React components, e.g. the chessground `Board` wrapper |
 | `e2e/` | Playwright tests, run on an emulated Pixel 7 |
+| `spikes/` | Throwaway experiments and measurements (see `docs/spikes/`) |
 | `.github/workflows/ci.yml` | CI: checks on every PR; deploys `main` to GitHub Pages |
 
 ## Deployment
@@ -48,4 +49,5 @@ To install on Android: open the site in Chrome, then menu → **Add to Home scre
 
 ## License
 
-GPL-3.0. See [LICENSE](LICENSE). Required because the app bundles Stockfish.
+AGPL-3.0-or-later. See [LICENSE](LICENSE) and [ADR-0008](docs/adr/0008-agpl-license.md): the app
+bundles Maia-3 (AGPL-3.0) and Stockfish (GPL-3.0).

@@ -16,4 +16,10 @@ describe('App', () => {
     expect(board.querySelectorAll('piece.white:not(.ghost)')).toHaveLength(16);
     expect(board.querySelectorAll('piece.black:not(.ghost)')).toHaveLength(16);
   });
+
+  it('links to its source code (required by the AGPL, ADR-0008)', () => {
+    render(<App />);
+    const link = screen.getByRole('link', { name: /source code/i });
+    expect(link).toHaveAttribute('href', 'https://github.com/booooh/chess-trainer');
+  });
 });

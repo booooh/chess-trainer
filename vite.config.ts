@@ -9,10 +9,30 @@ const base = process.env.BASE_PATH ?? '/';
 
 export default defineConfig({
   base,
+  build: {
+    rollupOptions: {
+      // spike-maia.html: phase 1 speed test for Maia-3 on real phones. Remove after the spike.
+      input: { main: 'index.html', 'spike-maia': 'spike-maia.html' },
+    },
+  },
+  worker: { format: 'es' },
+  resolve: {
+    // maia3-js imports the default ONNX runtime build, which bundles WebGPU support
+    // (29.5 MB .wasm). We only run on CPU, and the CPU-only build is half the size.
+    alias: [{ find: /^onnxruntime-web$/, replacement: 'onnxruntime-web/wasm' }],
+  },
+  // onnxruntime-web finds its .wasm files relative to its own module URL; Vite's dependency
+  // pre-bundling moves the module and breaks that, so leave it un-bundled in dev.
+  optimizeDeps: { exclude: ['onnxruntime-web'] },
   plugins: [
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      workbox: {
+        // Large ML files (model, ONNX runtime .wasm) are cached on demand, not precached
+        // on install: precaching would download them before the app is even used.
+        globIgnores: ['**/*.onnx', '**/*.wasm'],
+      },
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'Chess Trainer',
