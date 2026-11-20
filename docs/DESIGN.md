@@ -15,12 +15,11 @@ A training app for players rated roughly 600–1000 (chess.com) that:
 
 - Timed play (planned for v1.x, see §9).
 - Cross-device sync, accounts, social features (v2, Rust backend, see ADR-0006).
-- Opponents below ~1100 strength (accepted limitation, see ADR-0003).
 - Importing games from chess.com / Lichess.
 
 ### Users
 
-Ben and friends. Mostly used **on a phone**. Open source (GPLv3, required by Stockfish).
+Ben and friends. Mostly used **on a phone**. Open source (AGPL-3.0, required by Maia-3; see ADR-0008).
 
 ## 2. High-level architecture
 
@@ -265,11 +264,11 @@ The API key lives only on the device and is never written into exported data.
 | 5. Local LLM | WebLLM/wllama narrator, download UX | Works offline in airplane mode |
 | 6. Review | Post-game blunder list, eval graph | — |
 | v1.x | Timed play | — |
-| v2 | Rust backend + sync; lower-rated opponents | ADR-0006 |
+| v2 | Rust backend + sync | ADR-0006 |
 
 ## 10. Open questions
 
-- Maia-3's behaviour below 1100: worth testing early, since it might make the 600–1000 range
-  possible in v1 for free.
+- ~~Maia-3's behaviour below 1100~~: answered by the phase 1 spike (`docs/spikes/maia-3.md`).
+  It plays measurably weaker down to at least 400, so the 600–1000 range is possible in v1.
 - Exact hint threshold for "teachable but slightly worse" moves: tune from real games.
 - Whether hints used should affect the game record or stats (e.g. mark the game "assisted").

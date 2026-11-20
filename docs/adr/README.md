@@ -19,9 +19,10 @@ Status: Proposed | Accepted | Superseded by NNNN
 | # | Decision | Status |
 |---|---|---|
 | [0001](0001-client-only-pwa.md) | v1 is a client-only PWA, no backend | Accepted |
-| [0002](0002-stockfish-wasm-worker.md) | Stockfish as WASM in a Web Worker, analysis only | Accepted |
+| [0002](0002-stockfish-wasm-worker.md) | Stockfish as WASM in a Web Worker, analysis only | Accepted (license note superseded by 0008) |
 | [0003](0003-maia-opponents.md) | Maia-3 for human-like opponents | Accepted |
 | [0004](0004-facts-then-narrate.md) | Explanations: deterministic facts, then pluggable narrators | Accepted |
 | [0005](0005-position-keyed-opening-tree.md) | Openings stored as a position-keyed graph | Accepted |
 | [0006](0006-rust-backend-v2.md) | Rust backend for v2 sync | Proposed |
 | [0007](0007-github-pages-first.md) | Host on GitHub Pages first, deployed from CI | Accepted |
+| [0008](0008-agpl-license.md) | License the app under AGPL-3.0 (Maia-3 is AGPL) | Accepted |
