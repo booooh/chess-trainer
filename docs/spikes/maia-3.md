@@ -1,6 +1,7 @@
 # Spike: Maia-3 in the browser (phase 1)
 
-Date: 2026-11-20. Code: `spikes/maia/`. Page: `spike-maia.html` (deployed with the app).
+Date: 2026-11-20. Code: `spikes/maia/strength.ts`. The speed-test page (`spike-maia.html`) and its
+worker were removed once phase 1 had a real Maia worker; see commit `95ce67e` for them.
 
 ADR-0003 left three questions open before building the opponent on Maia-3:
 1. Does `maia3-js` + the ONNX model work in a browser Web Worker, and under what license?

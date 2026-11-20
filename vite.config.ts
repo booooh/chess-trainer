@@ -9,12 +9,6 @@ const base = process.env.BASE_PATH ?? '/';
 
 export default defineConfig({
   base,
-  build: {
-    rollupOptions: {
-      // spike-maia.html: phase 1 speed test for Maia-3 on real phones. Remove after the spike.
-      input: { main: 'index.html', 'spike-maia': 'spike-maia.html' },
-    },
-  },
   worker: { format: 'es' },
   resolve: {
     // maia3-js imports the default ONNX runtime build, which bundles WebGPU support

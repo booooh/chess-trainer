@@ -27,9 +27,6 @@
     "noEmit": true
   },
   "include": [
-    "src",
-    "spikes/maia/main.ts",
-    "spikes/maia/maia.worker.ts",
-    "spikes/maia/onnx-url.d.ts"
+    "src"
   ]
 }
