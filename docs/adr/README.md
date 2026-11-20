@@ -24,6 +24,6 @@ Status: Proposed | Accepted | Superseded by NNNN
 | [0004](0004-facts-then-narrate.md) | Explanations: deterministic facts, then pluggable narrators | Accepted |
 | [0005](0005-position-keyed-opening-tree.md) | Openings stored as a position-keyed graph | Accepted |
 | [0006](0006-rust-backend-v2.md) | Rust backend for v2 sync | Proposed |
-| [0007](0007-github-pages-first.md) | Host on GitHub Pages first, deployed from CI | Accepted (to be superseded by 0009) |
+| [0007](0007-github-pages-first.md) | Host on GitHub Pages first, deployed from CI | Superseded by 0009 |
 | [0008](0008-agpl-license.md) | License the app under AGPL-3.0 (Maia-3 is AGPL) | Accepted |
-| [0009](0009-cloudflare-pages-previews.md) | Move hosting to Cloudflare Pages, with a preview URL per PR | Proposed (phase 2, first task) |
+| [0009](0009-cloudflare-pages-previews.md) | Move hosting to Cloudflare Pages, with a preview URL per PR | Accepted |

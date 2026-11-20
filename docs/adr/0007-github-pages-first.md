@@ -1,5 +1,5 @@
 # 0007 — Host on GitHub Pages first, deployed from CI
-Status: Accepted
+Status: Superseded by [0009](0009-cloudflare-pages-previews.md)
 
 ## Context
 DESIGN §3 lists "Cloudflare Pages (or GitHub Pages)". Phase 0 needs *some* host so the empty

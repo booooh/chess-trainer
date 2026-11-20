@@ -1,6 +1,6 @@
 # Project status and handoff
 
-Last updated: 2026-11-20, after phase 1 and its follow-up fixes (PRs #1–#5, all merged).
+Last updated: 2026-11-20, phase 2 step 1 (Cloudflare Pages) in review. Phase 1: PRs #1–#5, all merged.
 Read this first when picking the project up in a new session, then `DESIGN.md` and the ADRs.
 
 ## Where things stand
@@ -9,11 +9,11 @@ Read this first when picking the project up in a new session, then `DESIGN.md` a
 |---|---|---|
 | 0. Skeleton | ✅ Done (PR #2) | Installs on the phone; CI runs on every PR |
 | 1. Play | ✅ Done (PRs #3, #4, #5) | Ben played a full game against Maia 1100 on a Pixel 10 |
-| 2. Hints | ⏭️ **Next** | Starts with the hosting move (ADR-0009). Plan below |
+| 2. Hints | 🚧 **In progress** | Step 1 (Cloudflare Pages, ADR-0009) in review. Plan below |
 | 3–6, v1.x, v2 | Not started | See `DESIGN.md` §9 |
 
-**Live app:** https://booooh.github.io/chess-trainer/. It deploys from `main` after CI passes (ADR-0007).
-That changes when ADR-0009 is done.
+**Live app:** https://booooh.github.io/chess-trainer/ until the Cloudflare PR merges; then
+https://chess-trainer.pages.dev (ADR-0009). Both deploy from `main` only after CI passes.
 
 ### What the app does today
 - New game: play as White, Black or Random against Maia-3 rated 400–1500 (Lichess scale, default 1100).
@@ -57,46 +57,37 @@ Goal (DESIGN §9): *a level-4 hint explains a fork correctly.* Work in this orde
 (CLAUDE.md), on feature branches with PRs.
 
 ### Step 1: Move hosting to Cloudflare Pages with PR previews (ADR-0009)
-Do this first so every later phase 2 PR gets a preview link you can open on the phone before merging.
+Gives every later phase 2 PR a preview link you can open on the phone before merging.
 
-**Ben does these by hand (needs his accounts):**
-1. Create a Cloudflare account (free plan).
-2. Create an API token: My Profile → API Tokens → Create Token → custom token with permission
-   **Account → Cloudflare Pages → Edit**, limited to his account.
-3. Note the **Account ID** (shown on the Workers & Pages overview page).
-4. In GitHub: repo **Settings → Secrets and variables → Actions** → add `CLOUDFLARE_API_TOKEN`
-   and `CLOUDFLARE_ACCOUNT_ID`.
-5. Create the Pages project once, either in the dashboard (Workers & Pages → Create → Pages →
-   "Direct Upload", name `chess-trainer`, production branch `main`), or let the first CI run
-   create it with `wrangler pages project create chess-trainer --production-branch=main`.
-   If the name is taken, pick another and use it in the workflow.
+**Done (branch `phase-2-cloudflare-pages`):**
+- Ben created the API token (*Account → Cloudflare Pages → Edit*) and added the repository
+  secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+- `ci.yml`: the `e2e` job uploads the `dist/` it tested; `deploy` downloads it and runs
+  `wrangler pages deploy` (`cloudflare/wrangler-action@v4`, Wrangler pinned to 4.166.0) for pushes
+  to `main` (production) and PRs from this repo (preview), after `check` and `e2e`. Fork PRs are
+  skipped. The first run creates the `chess-trainer` Pages project through the Cloudflare API if
+  it doesn't exist. One PR comment holds the preview links and is edited on each push. Runs on
+  `main` now queue instead of cancelling each other, so a production deploy is never cut off.
+- `BASE_PATH` removed (served at `/`). `public/_headers` makes `/assets/*` immutable; everything
+  else keeps Cloudflare's default (revalidate each time). No COOP/COEP.
+- Cloudflare's per-file limit is still 25 MiB (checked 2026-11-20); the largest file is the Maia
+  model at 21.5 MiB.
+- `legacy/github-pages/` + manual workflow `github-pages-moved.yml`: a "moved" page for the old
+  address, plus a `sw.js` that deletes the old app's caches and unregisters its service worker.
+  Without it, a phone with the app installed keeps serving the cached old app forever. Checked in
+  Chromium: the first visit after the swap shows the old app, which reloads itself into the
+  "moved" page with no service worker or caches left.
+- ADR-0009 Accepted, ADR-0007 Superseded, README "Deployment" and DESIGN §3 updated.
 
-**Code changes (Claude can do these):**
-- `ci.yml`:
-  - Replace the GitHub Pages `deploy` job with a Wrangler deploy (`cloudflare/wrangler-action`,
-    pin the current major version). Run
-    `wrangler pages deploy dist --project-name=chess-trainer --branch=${{ github.head_ref || github.ref_name }}`.
-  - Run it for pushes to `main` (production) **and** for `pull_request` events from this repo (preview).
-    Always gate it on `needs: [check, e2e]`.
-  - Skip the job for PRs from forks: `github.event.pull_request.head.repo.full_name == github.repository`.
-  - Give the PR a comment with the preview URL. The action outputs `deployment-url` and
-    `pages-deployment-alias-url`. Needs `permissions: pull-requests: write`. Update one comment
-    rather than adding a new one per push.
-  - Use a `concurrency` group per branch, so a newer push replaces an in-progress preview deploy.
-- Remove `BASE_PATH` from `vite.config.ts`, the workflow and the README (the site is served at `/`).
-- Add `public/_headers`. Start with `/assets/*  Cache-Control: public, max-age=31536000, immutable`.
-  Don't cache `index.html`, `sw.js` or `manifest.webmanifest` long-term. **No COOP/COEP yet** (see
-  ADR-0009 Consequences).
-- Keep a pointer at the old URL. After the switch, replace the GitHub Pages deployment with a
-  one-page "moved to …" link or redirect, then turn GitHub Pages off in settings once Ben has
-  reinstalled from the new URL. Remember that saved games don't move between origins.
-- Update ADR-0009 to Accepted and ADR-0007 to "Superseded by 0009", plus the ADR index, README
-  "Deployment" section and this file.
-- Check the 25 MiB per-file limit against Cloudflare's current docs. The biggest file is
-  `maia3_5m-*.onnx` at 22,550,022 bytes (21.5 MiB).
-
-**Check:** open a PR, tap the preview link on the phone, and confirm the app works there and that
-production is unchanged.
+**Still to do:**
+1. On the PR: check the deploy job passes (the first run creates the project), tap the preview
+   link on the phone, play a few moves. If Cloudflare gave the project a different `pages.dev`
+   subdomain (name taken), fix the URLs in README and here.
+2. Merge, then confirm production at https://chess-trainer.pages.dev and install it on the phone.
+3. Run **Actions → Replace GitHub Pages site with a "moved" page** with the new URL. Open the old
+   address on the phone to confirm it switches to the "moved" page.
+4. Later: turn GitHub Pages off (Settings → Pages), delete `github-pages-moved.yml` and
+   `legacy/`, and delete the `github-pages` environment.
 
 ### Step 2: Stockfish engine worker (DESIGN §4.1, ADR-0002)
 - Use the `stockfish` npm package (19.0.1, already a devDependency for the spike; make it a

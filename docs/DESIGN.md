@@ -85,7 +85,7 @@ unit-testable, and lets a later Rust/WASM port or a backend reuse its logic and 
 | Local LLM | WebLLM (WebGPU) with wllama (CPU) fallback | ADR-0004, phase 5 |
 | PWA | `vite-plugin-pwa` | Installable on Android, offline cache |
 | Tests | Vitest (unit), Playwright (end-to-end) | Standard for Vite projects |
-| Hosting | GitHub Pages now (ADR-0007); Cloudflare Pages in phase 2 (ADR-0009) | Free; Cloudflare adds PR preview URLs and custom headers (ADR-0002) |
+| Hosting | Cloudflare Pages, deployed from CI, with a preview per PR (ADR-0009; replaced GitHub Pages, ADR-0007) | Free; Cloudflare adds PR preview URLs and custom headers (ADR-0002) |
 
 ## 4. Engines
 

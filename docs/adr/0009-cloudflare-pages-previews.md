@@ -1,5 +1,5 @@
 # 0009 — Move hosting to Cloudflare Pages, with a preview URL for every PR
-Status: Proposed (do it first in phase 2). Supersedes [0007](0007-github-pages-first.md) once accepted.
+Status: Accepted (phase 2). Supersedes [0007](0007-github-pages-first.md).
 
 ## Context
 ADR-0007 chose GitHub Pages because it needed no accounts or secrets. Phase 1 exposed two limits:

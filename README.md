@@ -42,14 +42,29 @@ already have instead, set `PW_CHROMIUM_PATH` to its executable.
 | `src/storage/` | IndexedDB (Dexie) implementations of core repository interfaces |
 | `e2e/` | Playwright tests, run on an emulated Pixel 7 |
 | `spikes/` | Throwaway experiments and measurements (see `docs/spikes/`) |
-| `.github/workflows/ci.yml` | CI: checks on every PR; deploys `main` to GitHub Pages |
+| `.github/workflows/ci.yml` | CI: checks on every PR; deploys PR previews and `main` to Cloudflare Pages |
+| `.github/workflows/github-pages-moved.yml` | Manual, one-off: replaces the old GitHub Pages site with a "moved" page |
 
 ## Deployment
 
-Every push to `main` that passes CI is deployed to GitHub Pages ([ADR-0007](docs/adr/0007-github-pages-first.md)).
-Phase 2 starts by moving to Cloudflare Pages so every PR gets its own preview URL
-([ADR-0009](docs/adr/0009-cloudflare-pages-previews.md), steps in [`docs/STATUS.md`](docs/STATUS.md)).
-One-time setup: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+Hosted on Cloudflare Pages, deployed from CI with Wrangler ([ADR-0009](docs/adr/0009-cloudflare-pages-previews.md)).
+Nothing deploys until lint, type-check, unit tests and e2e tests have passed.
+
+- **Production:** every push to `main` is deployed to https://chess-trainer.pages.dev.
+- **Previews:** every pull request from a branch of this repo gets its own preview, and CI
+  posts the link as a PR comment (updated on each push). The link stays the same for the
+  branch: `https://<branch-name>.chess-trainer.pages.dev` (Cloudflare lowercases the name and
+  replaces other characters with `-`). Previews have their own storage, so they
+  never touch production's saved games.
+- **Headers:** `public/_headers` sets long-lived caching for the content-hashed files in
+  `/assets/`. Everything else is revalidated on each request, so app updates reach the phone.
+- **Setup (done once):** repository secrets `CLOUDFLARE_API_TOKEN` (custom token with
+  *Account → Cloudflare Pages → Edit*) and `CLOUDFLARE_ACCOUNT_ID`. The first deploy creates
+  the `chess-trainer` Pages project if it doesn't exist.
+
+The app used to live at https://booooh.github.io/chess-trainer/ ([ADR-0007](docs/adr/0007-github-pages-first.md)).
+`legacy/github-pages/` holds the "moved" page that replaces it, deployed by hand with the
+*Replace GitHub Pages site* workflow.
 
 To install on Android: open the site in Chrome, then menu → **Add to Home screen** / **Install app**.
 
