@@ -25,7 +25,8 @@ ADR-0003 left three questions open before building the opponent on Maia-3:
 
 ## 2. Speed
 
-Headless Chromium on this cloud container (4 cores, single-threaded WASM, no cross-origin isolation):
+First measured in headless Chromium on the cloud container used for development (4 cores,
+single-threaded WASM, no cross-origin isolation):
 
 | | Value |
 |---|---:|
@@ -34,14 +35,24 @@ Headless Chromium on this cloud container (4 cores, single-threaded WASM, no cro
 | Move + 5 candidate evaluations (`topK: 5`, for teaching lines), median / p90 | 181 / 225 ms |
 | First call (warm-up) | ~150 ms |
 
-Chrome DevTools CPU throttling **doesn't apply to Web Workers**, so the throttled run told us
-nothing. A phone CPU is perhaps 3–5× slower than this container, which would still put an opponent
-move at roughly 150–350 ms: fine for move-by-move play. **To confirm: open
-`/chess-trainer/spike-maia.html` on the phone and record the numbers here.**
+Chrome DevTools CPU throttling **doesn't apply to Web Workers**, so a throttled desktop run
+can't stand in for a phone. The real numbers came from opening
+`/chess-trainer/spike-maia.html` on the phone (Chrome 158, 8 cores, not cross-origin isolated,
+so single-threaded WASM like everywhere else):
 
-| Device | Load | Opponent move median / p90 | topK 5 median |
+| Device | Load | Opponent move median / p90 / max | topK 5 median / p90 |
 |---|---:|---:|---:|
-| Ben's phone | _todo_ | _todo_ | _todo_ |
+| Cloud container (headless Chromium) | 1.0 s download + 0.9 s session | 44 / 71 / 88 ms | 181 / 225 ms |
+| **Pixel 10** (model already cached) | 38 ms from cache + 415 ms session | **29 / 31 / 33 ms** | **125 / 129 ms** |
+
+My earlier guess that a phone would be 3–5× slower than the container was wrong: the Pixel 10 is
+about 1.5× *faster*, with very steady times (p90 within a few ms of the median). An opponent move
+costs about 30 ms, so Maia's speed is a non-issue. Even the teaching-line call with five
+candidate evaluations (§5.2) takes only about 125 ms. On a phone with the model cached, the
+first move is ready about half a second after opening the page.
+
+Not yet measured: the first-ever download over mobile data (~23 MB), and older or cheaper phones.
+Friends' phones may be several times slower than a Pixel 10 and would still be fast enough.
 
 ## 3. Strength below 1100
 
