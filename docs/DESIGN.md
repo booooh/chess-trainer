@@ -78,7 +78,7 @@ unit-testable, and lets a later Rust/WASM port or a backend reuse its logic and 
 | UI | React | Your preference; huge ecosystem |
 | Board | `chessground` | Lichess's board; mobile-friendly drag/tap, arrows, highlights |
 | Rules / PGN / FEN | `chess.js` | Mature, well-tested move generator |
-| State | Zustand | Much less boilerplate than Redux; easy to learn |
+| State | Core objects + `useSyncExternalStore`; Zustand when needed | Phase 1: the UI subscribes directly to `GameSession`. Add Zustand once app-wide state (settings, screens) grows |
 | Storage | IndexedDB via Dexie | Large structured local storage; works offline |
 | Engine | Stockfish (WASM, single-threaded "lite" build first) | ADR-0002 |
 | Opponent | Maia-3 via ONNX Runtime Web | ADR-0003 |
@@ -235,7 +235,8 @@ rebuilt from games.
 
 ```ts
 Game          { id: uuid, startedAt, userColor, opponent: {engine:"maia3", elo},
-                pgn, result, hintsUsed: {ply, level}[], openingKey?, schemaVersion }
+                moves: uci[], pgn, result, hintsUsed: {ply, level}[], openingKey?,
+                schemaVersion }                                     // src/core/records.ts
 PositionStat  { positionKey, userColor, timesSeen, wins, draws, losses,
                 lastSeenAt, children: {uci, timesPlayed}[] }        // derived, rebuildable
 RepertoireLine{ id: uuid, userColor, moves: uci[], pinned: boolean, createdAt }

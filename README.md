@@ -7,7 +7,8 @@ what you've played with both colours.
 
 Runs entirely in the browser as an installable PWA, with no backend in v1.
 
-**Status:** phase 0 (skeleton): an installable PWA showing an empty board. See
+**Status:** phase 1 (play): play full games against Maia on your phone, from 400 to 1500
+(Lichess-scale ratings); finished games are saved on the device. See
 [`docs/DESIGN.md`](docs/DESIGN.md) for the plan and the
 [architecture decision records](docs/adr/README.md) for why things are the way they are.
 
@@ -34,8 +35,10 @@ already have instead, set `PW_CHROMIUM_PATH` to its executable.
 
 | Path | What |
 |---|---|
-| `src/core/` | Pure TypeScript domain logic, no React (lint-enforced) |
-| `src/ui/` | React components, e.g. the chessground `Board` wrapper |
+| `src/core/` | Pure TypeScript domain logic, no React (lint-enforced): `Game`, `GameSession`, `MaiaOpponent` |
+| `src/ui/` | React components: chessground `Board` wrapper, new-game form, play screen |
+| `src/workers/` | Web Workers (Maia-3 via ONNX Runtime) and their typed main-thread clients |
+| `src/storage/` | IndexedDB (Dexie) implementations of core repository interfaces |
 | `e2e/` | Playwright tests, run on an emulated Pixel 7 |
 | `spikes/` | Throwaway experiments and measurements (see `docs/spikes/`) |
 | `.github/workflows/ci.yml` | CI: checks on every PR; deploys `main` to GitHub Pages |

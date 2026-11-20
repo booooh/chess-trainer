@@ -22,7 +22,6 @@
     "playwright.config.ts",
     "e2e",
     "scripts",
-    "spikes/maia/strength.ts",
-    "spikes/maia/browser-bench.ts"
+    "spikes/maia/strength.ts"
   ]
 }
