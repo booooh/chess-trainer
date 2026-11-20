@@ -4,15 +4,10 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
-// GitHub Pages serves this repo from /chess-trainer/, so the deploy workflow sets BASE_PATH.
-// Locally and in tests the app lives at the root.
-const base = process.env.BASE_PATH ?? '/';
-
 // The Maia model's real size, for accurate download progress (see src/workers/download.ts).
 const maiaModelBytes = statSync('node_modules/maia3-js/models/maia3_5m.onnx').size;
 
 export default defineConfig({
-  base,
   define: { __MAIA_MODEL_BYTES__: JSON.stringify(maiaModelBytes) },
   worker: { format: 'es' },
   resolve: {
