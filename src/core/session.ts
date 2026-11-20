@@ -12,6 +12,8 @@ export type SessionState = {
   turn: Color;
   userColor: Color;
   moves: readonly Uci[];
+  /** The same moves in algebraic notation, for the move list. */
+  san: readonly string[];
   lastMove: [Square, Square] | undefined;
   inCheck: boolean;
   /** Where the user may move right now; empty while the opponent thinks or after the game. */
@@ -76,6 +78,11 @@ export class GameSession {
     if (this.isOpponentsTurn()) await this.opponentMove();
   }
 
+  /** True if from → to is a pawn promotion, so the UI must ask which piece. */
+  isPromotion(from: Square, to: Square): boolean {
+    return this.game.isPromotion(from, to);
+  }
+
   /** Tries the opponent's move again after an error. */
   async retryOpponent(): Promise<void> {
     if (this.isOpponentsTurn() && !this.thinking) await this.opponentMove();
@@ -136,6 +143,7 @@ export class GameSession {
       turn: g.turn,
       userColor: this.options.userColor,
       moves: [...g.moves],
+      san: [...g.sanMoves],
       lastMove: g.lastMove,
       inCheck: g.inCheck,
       dests: userCanMove ? g.legalDestinations() : new Map(),

@@ -24,6 +24,7 @@ describe('Game', () => {
     expect(game.play('e2e4')).toEqual({ uci: 'e2e4', san: 'e4' });
     play(game, 'e7e5');
     expect(game.moves).toEqual(['e2e4', 'e7e5']);
+    expect(game.sanMoves).toEqual(['e4', 'e5']);
     expect(game.turn).toBe('white');
     expect(game.lastMove).toEqual(['e7', 'e5']);
   });

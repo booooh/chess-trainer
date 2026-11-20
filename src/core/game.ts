@@ -52,6 +52,11 @@ export class Game {
     return this.played;
   }
 
+  /** Moves played so far, in standard algebraic notation (e.g. "Nf3"), for display. */
+  get sanMoves(): readonly string[] {
+    return this.chess.history();
+  }
+
   get lastMove(): [Square, Square] | undefined {
     const last = this.played.at(-1);
     return last ? [last.slice(0, 2), last.slice(2, 4)] : undefined;

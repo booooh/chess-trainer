@@ -146,4 +146,15 @@ describe('GameSession', () => {
     await session.retryOpponent();
     expect(session.state).toMatchObject({ moves: ['e2e4', 'e7e5'], error: undefined });
   });
+
+  it('exposes SAN moves for the move list, and promotion checks for the board', async () => {
+    const { opponent, reply } = scriptedOpponent('e7e5');
+    const session = new GameSession({ userColor: 'white', opponent });
+    await session.start();
+    const done = session.playUserMove('e2e4');
+    await reply();
+    await done;
+    expect(session.state.san).toEqual(['e4', 'e5']);
+    expect(session.isPromotion('e4', 'e5')).toBe(false);
+  });
 });
