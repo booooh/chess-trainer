@@ -78,6 +78,11 @@ button.primary {
   font-weight: 600;
 }
 
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 button.danger {
   background: var(--danger);
   border-color: var(--danger);

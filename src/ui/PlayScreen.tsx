@@ -160,6 +160,18 @@ export function PlayScreen({ session, hints, elo, onNewGame }: Props) {
               Retry
             </button>
           )}
+          {!over && (
+            <button
+              type="button"
+              disabled={!s.canTakeBack}
+              onClick={() => {
+                setPromotion(null);
+                session.takeBack();
+              }}
+            >
+              Undo
+            </button>
+          )}
           {over ? (
             <button type="button" className="primary" onClick={onNewGame}>
               New game

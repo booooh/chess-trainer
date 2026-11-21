@@ -79,6 +79,19 @@ describe('App', () => {
     expect(screen.getByRole('form', { name: 'New game' })).toBeInTheDocument();
   });
 
+  it('offers Undo during a game, disabled until you have moved', async () => {
+    const user = userEvent.setup();
+    render(<App services={fakeServices().services} />);
+    await user.click(screen.getByRole('radio', { name: 'Black' }));
+    await user.click(screen.getByRole('button', { name: 'Start game' }));
+    await screen.findByText('Your move');
+    // Maia's first move isn't yours to take back. (Moving pieces is covered by e2e/play.spec.ts.)
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Resign' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm resign' }));
+    expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
+  });
+
   it('shows Maia download progress until the model is ready', () => {
     const modelStatus = new ModelStatusStore();
     modelStatus.set({ state: 'loading', progress: 0.4 });

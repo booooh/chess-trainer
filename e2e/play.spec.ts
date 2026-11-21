@@ -67,3 +67,21 @@ test('as black, Maia opens; resigning saves the game to IndexedDB', async ({ pag
   await page.getByRole('button', { name: 'New game' }).click();
   await expect(page.getByRole('form', { name: 'New game' })).toBeVisible();
 });
+
+test('undo takes back your move and Maia\'s reply, and you can play another', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Start game' }).click();
+  const undo = page.getByRole('button', { name: 'Undo' });
+  await expect(undo).toBeDisabled();
+
+  await move(page, 'e2', 'e4');
+  await expect(moves(page)).toContainText(/^1\. e4 \S+/, { timeout: 60_000 });
+  await undo.click();
+  await expect(moves(page)).toBeEmpty();
+  await expect(status(page)).toHaveText('Your move');
+  await expect(undo).toBeDisabled();
+
+  await move(page, 'd2', 'd4');
+  await expect(moves(page)).toContainText(/^1\. d4 \S+/, { timeout: 30_000 });
+});
