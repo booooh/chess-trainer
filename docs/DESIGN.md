@@ -264,7 +264,7 @@ Current status and the detailed plan for the next phase: [`docs/STATUS.md`](STAT
 |---|---|---|---|
 | 0. Skeleton | Vite/React/TS, PWA, CI, lint, tests, deploy | Empty board installs on phone | ✅ Done |
 | 1. Play | Board, chess.js, Maia opponent, save games | Full game vs Maia 1100 on phone | ✅ Done |
-| 2. Hints | **First: move hosting to Cloudflare Pages with PR previews (ADR-0009).** Then Stockfish worker, hint ladder, teaching line, facts + templates | PRs get a working preview URL; level-4 hint explains a fork correctly | ⏭️ Next |
+| 2. Hints | **First: move hosting to Cloudflare Pages with PR previews (ADR-0009).** Then Stockfish worker, hint ladder, teaching line, facts + templates | PRs get a working preview URL; level-4 hint explains a fork correctly | 🚧 Built; phone check pending |
 | 3. Openings | ECO lookup, tree, stats, beginner suggestions, Explore/Deepen | Deepen mode repeats the Italian 3 games in a row | |
 | 4. Online LLM | BYO-key narrator (Anthropic / OpenAI-compatible), fallback chain | Pull network → template text appears | |
 | 5. Local LLM | WebLLM/wllama narrator, download UX | Works offline in airplane mode | |

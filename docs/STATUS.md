@@ -1,6 +1,6 @@
 # Project status and handoff
 
-Last updated: 2026-11-21, phase 2 steps 1 done (PRs #6, #7); steps 2–4 on draft PR #8; step 5 next.
+Last updated: 2026-11-21, phase 2 steps 1–5 built (step 1 in PRs #6, #7; steps 2–5 on draft PR #8). Next: Ben tries hints on the phone.
 Read this first when picking the project up in a new session, then `DESIGN.md` and the ADRs.
 
 ## Where things stand
@@ -9,7 +9,7 @@ Read this first when picking the project up in a new session, then `DESIGN.md` a
 |---|---|---|
 | 0. Skeleton | ✅ Done (PR #2) | Installs on the phone; CI runs on every PR |
 | 1. Play | ✅ Done (PRs #3, #4, #5) | Ben played a full game against Maia 1100 on a Pixel 10 |
-| 2. Hints | 🚧 **In progress** | Step 1 ✅. Steps 2–4 (engine, facts, teaching line) on draft PR #8. Step 5 (UI) next |
+| 2. Hints | 🚧 **Built, in review** | Step 1 ✅. Steps 2–5 on draft PR #8; done-when e2e passes. Waiting on a phone check |
 | 3–6, v1.x, v2 | Not started | See `DESIGN.md` §9 |
 
 **Live app:** https://chess-trainer-dri.pages.dev (Cloudflare Pages, ADR-0009). It deploys from `main`
@@ -26,7 +26,10 @@ https://booooh.github.io/chess-trainer/, now shows a "moved" page.
 - Status line, move list, resign (with confirmation), retry if Maia fails, and model download progress.
 - Finished games are saved to IndexedDB (`chess-trainer` database, `games` table, DESIGN §7 format).
 - AGPL-3.0 with a "Source code" link (ADR-0008). Installable PWA that works offline once Maia is cached.
-- Stockfish is wired in as `services.engine` but nothing calls it yet (the hint UI is step 5).
+- **Hints** (phase 2): on your turn, Hint shows a nudge; More help reveals the piece (circled), the move
+  (arrow), then the line explained step by step. The highest level per move goes in `hintsUsed`.
+- **Practice positions:** `?fen=<FEN>` in the URL starts games from that position (invalid or
+  finished positions are ignored). Games record it as `startFen`.
 
 ### Known limitations (deliberately left out so far)
 - A game in progress is lost on reload; only finished games are saved.
@@ -49,6 +52,8 @@ src/core/      Pure TS, no React (lint-enforced)
   board.ts       Tactics board: attack maps (x-rays via "gone" squares), SEE, material
   facts.ts       Facts extractor: moveFacts (material, fork, newly hanging, eval swing), hangingPieces
   teachingLine.ts buildTeachingLine: Stockfish for the user, Maia for the opponent, best-defence branch
+  narrator.ts    Template narrator: the text of the four hint levels
+  hints.ts       HintCoach: the hint ladder (one more level per press), per position
 src/workers/   maia.worker.ts (Maia-3 via onnxruntime-web), maiaClient.ts (request ids, abort,
                crash handling), maiaProtocol.ts (message types), download.ts (progress),
                stockfishClient.ts (queue, stop/abort, start-up timeout; stockfish.js itself is
@@ -61,7 +66,7 @@ e2e/           Playwright on an emulated Pixel 7 against the production build (r
 spikes/maia/   strength.ts: re-runnable Maia strength-by-rating measurement (Node + Stockfish)
 ```
 
-Tests: 108 unit (Vitest; two use real Stockfish in Node) and 6 e2e (Playwright). CI is `.github/workflows/ci.yml`, with jobs
+Tests: 137 unit (Vitest; two use real Stockfish in Node) and 7 e2e (Playwright). CI is `.github/workflows/ci.yml`, with jobs
 `check` → `e2e` → `deploy` (`main` only).
 
 ## Phase 2 plan: Hints
@@ -105,10 +110,15 @@ Gives every later phase 2 PR a preview link you can open on the phone before mer
 - `stockfish` 19.0.1 is a dependency (pinned). The app uses the **lite single-threaded** build:
   `stockfish-19-lite-single.js` (28 KB) + `.wasm` (1.8 MB, 1.2 MB compressed). GPL-3.0, compatible with
   our AGPL (ADR-0008).
-- **The wasm pitfall, solved:** both files are imported with Vite's `?url`, so each gets its own
-  content hash. stockfish.js reads an explicit wasm location from its URL's hash before
-  guessing from its own name, so the worker starts as `stockfish-<hash>.js#<encoded wasm URL>`
-  (`stockfishWorkerUrl`). The e2e test runs the built files; without the hash it fails.
+- **The wasm pitfall** (stockfish.js finds its `.wasm` by swapping `.js` → `.wasm` in its own URL):
+  - First attempt: Vite-hashed names plus the wasm URL in the worker URL's `#hash`, which
+    stockfish.js reads first. **It broke whenever the service worker served the script from its
+    cache**: the worker's location then has no hash, so the wasm name was guessed wrong and the
+    engine never started. On a phone that's every visit after the first. Fresh-browser e2e tests
+    missed it; the hint e2e test now reloads so the service worker is in control.
+  - Now: a Vite plugin (`stockfishEngine` in `vite.config.ts`) publishes
+    `engine/stockfish-<version>-lite-single.{js,wasm}` with matching names (served from
+    node_modules in dev). `_headers` caches `/engine/*` as immutable; the version busts it.
 - `Engine` (in `src/core/engine.ts`): `analyse(fen, { multiPv, movetimeMs }, signal) → Line[]`, with
   `Line = { move, score: {type:'cp'|'mate', value}, pv, depth }`. Scores are from the side to
   move's point of view (UCI convention). Checkmate and stalemate give `[]`.
@@ -175,12 +185,34 @@ when the eval agrees.
   lines with `queueMicrotask`.
 
 ### Step 5: Template narrator and hint ladder UI (DESIGN §5.1, §5.3)
-- `TemplateNarrator` turns facts into text. It never fails.
-- Hint button: each press reveals one more level: nudge → piece → move arrow → line with explanation.
-  Use chessground's `drawable` shapes for highlights and arrows.
-- Record the highest level used per ply in `GameRecord.hintsUsed` (the field already exists).
-- Done-when e2e: a fixed position with a fork, with level 4 showing the right move and an explanation mentioning the fork.
-  Use a fake engine in unit tests; one e2e test can use real Stockfish.
+**Done (draft PR #8):**
+- `narrator.ts` (template narrator, never fails): `narrate(line, { fen, userColor })` gives
+  - level 1 nudge, first match wins: mate in one / forced mate in N / fork / your piece under
+    attack / you can win material / look for a check / "no tactic: improve your position";
+  - level 2 "Look at your knight on b5." (circle), level 3 "Play Nc7+." (arrow);
+  - level 4 steps: the fork and its targets, "Most players reply …" (Maia ≠ best) or "The best
+    reply is …", captures as "wins" or "takes" (taken straight back = a trade), a material
+    summary, and the best defence. **Material is only claimed when Stockfish's score is ≥ +100.**
+- `hints.ts`, `HintCoach`: first press builds the line (button shows "Thinking…"), later presses
+  reveal levels without analysing again; a new position starts over; failures are shown with
+  the reason and retried on the next press; each level shown calls `session.noteHint`.
+- `GameSession.noteHint` keeps the highest level per ply → `GameRecord.hintsUsed`
+  (`ply` indexes `moves`). Hints are only offered on the user's turn; the panel and shapes
+  disappear as soon as a move is made.
+- `Board` takes `shapes` (chessground `setAutoShapes`, green brush).
+- The user's rating isn't known, so the opponent's rating stands in for "which move would a
+  human find" (`userElo` in HintCoach).
+- **Done-when e2e** (`e2e/hints.spec.ts`, real Stockfish + real Maia, service worker in control):
+  in `4k3/7p/q7/1N6/8/8/7P/4K3 w`, level 4 says "Nc7+ is a fork: the knight attacks the king and
+  the queen at the same time" and "Then Nxa6 wins the queen". A hint takes ~2.5 s there.
+- **Bug found by it:** maia3-js replays `moves` from the standard start unless given `baseFen`, so
+  every Maia call failed in practice positions. `startFen` now travels with each request.
+
+**Still to do:**
+- Ben: try hints on the phone (preview link on PR #8), e.g. with
+  `?fen=4k3/7p/q7/1N6/8/8/7P/4K3%20w%20-%20-%200%201`, and in normal games. Note how long a
+  hint takes on the Pixel 10 (the first one includes starting Stockfish).
+- Then mark PR #8 ready, merge, and close phase 2.
 
 ### Open questions for phase 2 (also in DESIGN §10)
 - Threshold for "teachable but slightly worse" moves.
