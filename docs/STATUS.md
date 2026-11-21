@@ -1,6 +1,6 @@
 # Project status and handoff
 
-Last updated: 2026-11-21, phase 2 done (PRs #6, #7, #8; hints checked on the phone). Next: phase 2b, coaching while playing.
+Last updated: 2026-11-21, phase 2b started: Undo done on branch `phase-2b-undo`. Next: blunder warning.
 Read this first when picking the project up in a new session, then `DESIGN.md` and the ADRs.
 
 ## Where things stand
@@ -10,7 +10,7 @@ Read this first when picking the project up in a new session, then `DESIGN.md` a
 | 0. Skeleton | ✅ Done (PR #2) | Installs on the phone; CI runs on every PR |
 | 1. Play | ✅ Done (PRs #3, #4, #5) | Ben played a full game against Maia 1100 on a Pixel 10 |
 | 2. Hints | ✅ Done (PRs #6, #7, #8) | Ben checked hints on the phone; done-when e2e passes |
-| 2b. Coaching while playing | ⏭️ **Next** (Ben to confirm order vs. phase 3) | Undo, blunder warning, "why not?" (DESIGN §5.4) |
+| 2b. Coaching while playing | 🚧 **In progress** (Ben chose it before phase 3) | Undo ✅ (branch `phase-2b-undo`); next: blunder warning, then "why not?" (DESIGN §5.4) |
 | 3–6, v1.x, v2 | Not started | See `DESIGN.md` §9 |
 
 **Live app:** https://chess-trainer-dri.pages.dev (Cloudflare Pages, ADR-0009). It deploys from `main`
@@ -29,13 +29,15 @@ https://booooh.github.io/chess-trainer/, now shows a "moved" page.
 - AGPL-3.0 with a "Source code" link (ADR-0008). Installable PWA that works offline once Maia is cached.
 - **Hints** (phase 2): on your turn, Hint shows a nudge; More help reveals the piece (circled), the move
   (arrow), then the line explained step by step. The highest level per move goes in `hintsUsed`.
+- **Undo** (phase 2b): takes back your move and Maia's reply (only your move if she's still
+  thinking, which cancels her reply). Only while the game is on. The record counts take-backs.
 - **Practice positions:** `?fen=<FEN>` in the URL starts games from that position (invalid or
   finished positions are ignored). Games record it as `startFen`.
 
 ### Known limitations (deliberately left out so far)
 - A game in progress is lost on reload; only finished games are saved.
 - No screen lists saved games yet (comes with phase 3 or 6).
-- No take-backs, draw offers or clocks (timed play is v1.x).
+- No draw offers or clocks (timed play is v1.x). No undo after the game ends (the record is saved by then).
 - The opponent never plays moves Maia rates under 2% (`DEFAULT_FLOOR` in `src/core/opponent.ts`).
   That makes it slightly stronger than in the spike's measurements. Tune by feel.
 - The default rating of 1100 is a guess. Maia uses Lichess ratings, which run higher than chess.com's (`docs/spikes/maia-3.md`).
@@ -67,7 +69,7 @@ e2e/           Playwright on an emulated Pixel 7 against the production build (r
 spikes/maia/   strength.ts: re-runnable Maia strength-by-rating measurement (Node + Stockfish)
 ```
 
-Tests: 137 unit (Vitest; two use real Stockfish in Node) and 7 e2e (Playwright). CI is `.github/workflows/ci.yml`, with jobs
+Tests: 148 unit (Vitest; two use real Stockfish in Node) and 8 e2e (Playwright). CI is `.github/workflows/ci.yml`, with jobs
 `check` → `e2e` → `deploy` (`main` only).
 
 ## Phase 2 plan: Hints
@@ -213,12 +215,22 @@ when the eval agrees.
 - Not measured yet: how long a hint takes on the Pixel 10 (the first one includes starting
   Stockfish). Worth timing when tuning the blunder warning, which needs fast analysis.
 
-## Next: phase 2b, coaching while playing (DESIGN §5.4)
+## Phase 2b: coaching while playing (DESIGN §5.4)
 Requested by Ben after using phase 2 hints. Build in this order, test-first as usual:
-1. **Undo:** take back your move and Maia's reply (repeat to go further back). Needs
-   `Game.undo`, a `GameSession.takeBack()` that cancels a pending Maia reply, dropping
-   `hintsUsed` entries for undone plies, and an Undo button. Decide whether records count
-   take-backs.
+1. **Undo: done** (branch `phase-2b-undo`).
+   - `Game.undo()` pops one ply (refused after a resignation; a checkmate can be undone at
+     this level, but the session doesn't offer it).
+   - `GameSession.takeBack()` undoes plies until it's the user's turn again, so it's one ply
+     while Maia is thinking or has failed, two otherwise. `state.canTakeBack` is false before
+     the user's first move (e.g. Maia's opening move as Black) and once the game is over.
+   - Each opponent request now has its own `AbortController` (was one per session), so a
+     take-back cancels Maia's pending reply and the session goes on. A reply that arrives
+     after cancelling is ignored.
+   - Records: optional `takebacks` count (left out when zero, so old records still match the
+     type; `schemaVersion` stays 1). `hintsUsed` entries for undone plies are dropped.
+   - UI: Undo button between Hint and Resign, disabled when there's nothing to take back.
+     Disabled buttons are now dimmed (they looked enabled before, e.g. "Thinking…").
+   - Tests: unit tests for Game/GameSession/App, plus an e2e test (e4, undo, d4 against the real Maia).
 2. **Blunder warning** (option on the new-game form, off by default): before playing a move
    that drops ≥ ~200 cp versus the best, allows or misses a mate, or newly hangs a piece, ask
    "Play anyway / Take it back". Pre-analyse while it's your turn so the check after your move

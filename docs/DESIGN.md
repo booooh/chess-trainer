@@ -194,9 +194,11 @@ which is what makes a small local model usable at all.
 Requested by Ben after trying phase 2 hints. In build order, since each needs the one before:
 
 1. **Undo.** Take back moves to choose a different one. Normally a pair (your move and Maia's
-   reply), so it's your turn again; repeat to go further back. `hintsUsed` entries for undone
-   plies are dropped. Open question: should a finished game's record show that moves were
-   taken back (e.g. a `takebacks` count), like hints might mark it "assisted"?
+   reply), so it's your turn again; repeat to go further back. While Maia is still thinking
+   (or failed to move), Undo takes back only your move and cancels her reply. `hintsUsed`
+   entries for undone plies are dropped. The record keeps a `takebacks` count (left out when
+   zero), so a later "assisted" flag or stats can use it without changing the format. Undo is
+   only offered while the game is on: a finished game's record is saved and never changes.
 2. **Blunder warning** (an option, off by default). When your move loses a lot compared with
    the best one (e.g. ≥ 200 cp, a missed or allowed mate, or a newly hanging piece from the
    facts extractor), ask before it's played: "This leaves your knight on d4 undefended. Play
@@ -258,8 +260,8 @@ rebuilt from games.
 
 ```ts
 Game          { id: uuid, startedAt, userColor, opponent: {engine:"maia3", elo},
-                moves: uci[], pgn, result, hintsUsed: {ply, level}[], openingKey?,
-                schemaVersion }                                     // src/core/records.ts
+                startFen?, moves: uci[], pgn, result, hintsUsed: {ply, level}[],
+                takebacks?, openingKey?, schemaVersion }                                     // src/core/records.ts
 PositionStat  { positionKey, userColor, timesSeen, wins, draws, losses,
                 lastSeenAt, children: {uci, timesPlayed}[] }        // derived, rebuildable
 RepertoireLine{ id: uuid, userColor, moves: uci[], pinned: boolean, createdAt }
