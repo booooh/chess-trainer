@@ -12,15 +12,6 @@ export interface UciWorkerLike {
   terminate(): void;
 }
 
-/**
- * The URL to start the Stockfish worker from. stockfish.js finds its .wasm by renaming its own
- * URL (`x.js` → `x.wasm`), which breaks once Vite gives each file its own content hash. It
- * reads an explicit .wasm location from the URL hash first, so we pass it there.
- */
-export function stockfishWorkerUrl(scriptUrl: string, wasmUrl: string): string {
-  return `${scriptUrl}#${encodeURIComponent(wasmUrl)}`;
-}
-
 type Job = {
   fen: string;
   options: AnalyseOptions;

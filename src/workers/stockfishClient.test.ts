@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { StockfishClient, stockfishWorkerUrl, type UciWorkerLike } from './stockfishClient';
+import { StockfishClient, type UciWorkerLike } from './stockfishClient';
 
 /** Stands in for the Stockfish worker: records commands, and replies when told to. */
 class FakeStockfish implements UciWorkerLike {
@@ -44,14 +44,6 @@ async function readyClient() {
 }
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
-
-describe('stockfishWorkerUrl', () => {
-  it('passes the .wasm location in the URL hash, where stockfish.js looks for it', () => {
-    expect(stockfishWorkerUrl('/assets/stockfish-AbC1.js', '/assets/stockfish-XyZ2.wasm')).toBe(
-      '/assets/stockfish-AbC1.js#%2Fassets%2Fstockfish-XyZ2.wasm',
-    );
-  });
-});
 
 describe('StockfishClient', () => {
   it('starts the UCI handshake and is ready on uciok', async () => {

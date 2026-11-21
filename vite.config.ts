@@ -1,14 +1,53 @@
 /// <reference types="vitest/config" />
-import { statSync } from 'node:fs';
-import { defineConfig } from 'vite';
+import { readFileSync, statSync } from 'node:fs';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 // The Maia model's real size, for accurate download progress (see src/workers/download.ts).
 const maiaModelBytes = statSync('node_modules/maia3-js/models/maia3_5m.onnx').size;
 
+/**
+ * Stockfish 19 Lite single-threaded (ADR-0002), published as
+ * engine/stockfish-<version>-lite-single.{js,wasm}. stockfish.js finds its .wasm by swapping
+ * its own URL's ".js" for ".wasm", so the two files must keep matching names: Vite's
+ * content-hashed asset names would break that. (Passing the .wasm URL in the worker URL's
+ * #hash isn't reliable either: when the service worker serves the script from its cache, the
+ * worker's location loses the hash.) The version in the name busts caches on upgrades.
+ */
+const stockfishVersion: string = JSON.parse(readFileSync('node_modules/stockfish/package.json', 'utf8')).version;
+const stockfishPath = `engine/stockfish-${stockfishVersion}-lite-single`;
+const stockfishFiles: Record<string, { source: string; type: string }> = {
+  [`${stockfishPath}.js`]: { source: 'node_modules/stockfish/bin/stockfish-19-lite-single.js', type: 'text/javascript' },
+  [`${stockfishPath}.wasm`]: { source: 'node_modules/stockfish/bin/stockfish-19-lite-single.wasm', type: 'application/wasm' },
+};
+
+function stockfishEngine(): Plugin {
+  return {
+    name: 'stockfish-engine',
+    // `vite dev`: serve the files straight from node_modules.
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const file = stockfishFiles[(req.url ?? '').split(/[?#]/)[0]!.replace(/^\//, '')];
+        if (!file) return next();
+        res.setHeader('Content-Type', file.type);
+        res.end(readFileSync(file.source));
+      });
+    },
+    // `vite build`: copy them into dist/ under their fixed names.
+    generateBundle() {
+      for (const [fileName, file] of Object.entries(stockfishFiles)) {
+        this.emitFile({ type: 'asset', fileName, source: readFileSync(file.source) });
+      }
+    },
+  };
+}
+
 export default defineConfig({
-  define: { __MAIA_MODEL_BYTES__: JSON.stringify(maiaModelBytes) },
+  define: {
+    __MAIA_MODEL_BYTES__: JSON.stringify(maiaModelBytes),
+    __STOCKFISH_SCRIPT__: JSON.stringify(`${stockfishPath}.js`),
+  },
   worker: { format: 'es' },
   resolve: {
     // maia3-js imports the default ONNX runtime build, which bundles WebGPU support
@@ -20,6 +59,7 @@ export default defineConfig({
   optimizeDeps: { exclude: ['onnxruntime-web'] },
   plugins: [
     react(),
+    stockfishEngine(),
     VitePWA({
       registerType: 'autoUpdate',
       workbox: {

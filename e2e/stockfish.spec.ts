@@ -1,20 +1,15 @@
 import { readdirSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
-import { stockfishWorkerUrl } from '../src/workers/stockfishClient';
 
-// The hint UI (phase 2, step 5) isn't built yet, so nothing in the app starts Stockfish. This
-// test starts the worker from the production build the same way browserServices.ts does, to
-// check that the content-hashed script finds its content-hashed .wasm when served.
-const assets = readdirSync('dist/assets');
-const asset = (pattern: RegExp) => {
-  const name = assets.find((f) => pattern.test(f));
-  if (!name) throw new Error(`No ${pattern} in dist/assets: run \`npm run build\` first`);
-  return `/assets/${name}`;
-};
+// The built Stockfish files keep matching names (vite.config.ts, stockfishEngine), because
+// stockfish.js finds its .wasm by swapping ".js" for ".wasm" in its own URL. This starts the
+// worker the same way browserServices.ts does, without going through the hint UI.
+const script = readdirSync('dist/engine').find((f) => /^stockfish-.*\.js$/.test(f));
 
 test('the built Stockfish worker loads its wasm and finds a mate in one', async ({ page }) => {
+  expect(script, 'run `npm run build` first').toBeDefined();
+  expect(readdirSync('dist/engine')).toContain(script!.replace(/\.js$/, '.wasm'));
   await page.goto('./');
-  const workerUrl = stockfishWorkerUrl(asset(/^stockfish-.*\.js$/), asset(/^stockfish-.*\.wasm$/));
   const bestMove = await page.evaluate(
     (url) =>
       new Promise<string>((resolve, reject) => {
@@ -32,7 +27,7 @@ test('the built Stockfish worker loads its wasm and finds a mate in one', async 
         };
         worker.postMessage('uci');
       }),
-    workerUrl,
+    `/engine/${script}`,
   );
   expect(bestMove).toBe('bestmove d1d8');
 });

@@ -5,3 +5,7 @@
 # Vite puts a content hash in every filename under /assets/, so a file there never changes.
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+
+# Stockfish: fixed names (stockfish.js finds its .wasm by name), with the version in them.
+/engine/*
+  Cache-Control: public, max-age=31536000, immutable
