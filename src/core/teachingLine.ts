@@ -33,6 +33,8 @@ export type TeachingLineRequest = {
   fen: string;
   /** Moves from the start of the game to `fen` (Maia uses recent ones as context). */
   moves: readonly Uci[];
+  /** The position `moves` start from, if the game didn't start from the usual one. */
+  startFen?: string;
   userElo: number;
   opponentElo: number;
 };
@@ -93,7 +95,7 @@ export async function buildTeachingLine(
 
     // The opponent's reply.
     const probs = await predictor.predict(
-      { fen: game.fen, moves: [...history], selfElo: req.opponentElo, oppoElo: req.userElo },
+      { fen: game.fen, moves: [...history], ...startFrom(req), selfElo: req.opponentElo, oppoElo: req.userElo },
       signal,
     );
     const reply = mostLikely(probs);
@@ -134,7 +136,7 @@ async function chooseFirstMove(
   if (candidates.length === 1) return candidates[0]!;
 
   const probs = await predictor.predict(
-    { fen: req.fen, moves: req.moves, selfElo: req.userElo, oppoElo: req.opponentElo },
+    { fen: req.fen, moves: req.moves, ...startFrom(req), selfElo: req.userElo, oppoElo: req.opponentElo },
     signal,
   );
   const ranked = candidates.map((line, order) => ({
@@ -146,6 +148,9 @@ async function chooseFirstMove(
   ranked.sort((a, b) => Number(b.motif) - Number(a.motif) || b.likelihood - a.likelihood || a.order - b.order);
   return ranked[0]!.line;
 }
+
+/** Maia replays `moves` from the start position, so it needs to know a custom one. */
+const startFrom = (req: TeachingLineRequest) => (req.startFen ? { startFen: req.startFen } : {});
 
 const hasMotif = (facts: Fact[]) =>
   facts.some((f) => f.kind === 'fork' || (f.kind === 'materialChange' && f.deltaCp > 0));

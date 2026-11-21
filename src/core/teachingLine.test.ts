@@ -190,6 +190,25 @@ describe('buildTeachingLine', () => {
     expect(result).toBeNull();
   });
 
+  it('tells Maia which position the moves start from', async () => {
+    const engine = new FakeEngine(
+      new Map([
+        [FORK, [line(cp(480), 'b5c7', 'e8d7', 'c7a8'), line(cp(470), 'b5d6', 'e8d7')]],
+        [after(FORK, 'b5c7', 'e8d7'), [line(cp(500), 'c7a8', 'd7c8')]],
+      ]),
+    );
+    const predictor = new FakePredictor(
+      new Map([
+        [FORK, [['b5c7', 1]]],
+        [after(FORK, 'b5c7'), [['e8d7', 1]]],
+        [after(FORK, 'b5c7', 'e8d7', 'c7a8'), [['d7c8', 1]]],
+      ]),
+    );
+    await buildTeachingLine({ ...request, startFen: FORK }, { engine, predictor });
+    expect(predictor.calls.length).toBeGreaterThan(1);
+    for (const call of predictor.calls) expect(call.startFen).toBe(FORK);
+  });
+
   it('passes the abort signal to the engine and to Maia', async () => {
     const abort = new AbortController();
     abort.abort();

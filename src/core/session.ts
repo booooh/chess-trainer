@@ -4,7 +4,8 @@ import type { GameRecord, HintLevel } from './records';
 /** Anything that can pick a move for the computer side (MaiaOpponent, or a fake in tests). */
 export interface Opponent {
   readonly elo: number;
-  chooseMove(position: { fen: string; moves: readonly Uci[] }, signal?: AbortSignal): Promise<Uci>;
+  /** `startFen` is set when the game started from a position other than the usual one. */
+  chooseMove(position: { fen: string; moves: readonly Uci[]; startFen?: string }, signal?: AbortSignal): Promise<Uci>;
 }
 
 export type SessionState = {
@@ -128,7 +129,9 @@ export class GameSession {
     this.changed();
     const signal = this.abort.signal;
     try {
-      const uci = await this.options.opponent.chooseMove({ fen: this.game.fen, moves: this.game.moves }, signal);
+      const { startFen } = this.options;
+      const position = { fen: this.game.fen, moves: this.game.moves, ...(startFen ? { startFen } : {}) };
+      const uci = await this.options.opponent.chooseMove(position, signal);
       if (signal.aborted) return;
       this.game.play(uci);
     } catch (err) {

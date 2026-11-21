@@ -44,7 +44,7 @@ export default function App({ services, startFen }: AppProps) {
     const hints = new HintCoach(
       { engine: services.engine, predictor: services.predictor },
       // We don't know the user's rating yet, so the opponent's stands in for it.
-      { userColor, userElo: choice.elo, opponentElo: choice.elo, onLevel: (level) => session.noteHint(level) },
+      { userColor, userElo: choice.elo, opponentElo: choice.elo, startFen, onLevel: (level) => session.noteHint(level) },
     );
     setElo(choice.elo);
     setPlaying({ session, hints, elo: choice.elo });

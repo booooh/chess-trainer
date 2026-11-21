@@ -65,6 +65,13 @@ describe('MaiaClient', () => {
     expect(await second).toEqual(new Map([['d2d4', 1]]));
   });
 
+  it('sends the position the moves start from, when there is one', () => {
+    const worker = new FakeWorker();
+    const client = new MaiaClient(worker);
+    void client.predict({ ...request, startFen: 'customfen' });
+    expect(worker.lastPredict()).toMatchObject({ moves: ['e2e4'], startFen: 'customfen' });
+  });
+
   it('rejects a prediction that fails in the worker', async () => {
     const worker = new FakeWorker();
     const client = new MaiaClient(worker);

@@ -23,6 +23,8 @@ export type HintCoachOptions = {
    */
   userElo: number;
   opponentElo: number;
+  /** The position the game started from, if it isn't the usual one. */
+  startFen?: string;
   /** Called each time a level is shown, so the game can record it. */
   onLevel?: (level: HintLevel) => void;
   lineOptions?: TeachingLineOptions;
@@ -67,9 +69,9 @@ export class HintCoach {
     this.abort = abort;
     this.set({ status: 'thinking' });
     try {
-      const { userColor, userElo, opponentElo, lineOptions } = this.options;
+      const { userColor, userElo, opponentElo, startFen, lineOptions } = this.options;
       const line = await buildTeachingLine(
-        { fen: position.fen, moves: position.moves, userElo, opponentElo },
+        { fen: position.fen, moves: position.moves, ...(startFen ? { startFen } : {}), userElo, opponentElo },
         this.deps,
         lineOptions,
         abort.signal,

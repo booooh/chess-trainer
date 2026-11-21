@@ -5,12 +5,12 @@ import { GameSession, type Opponent } from './session';
 
 /** An opponent that plays scripted moves, and lets the test decide when each reply arrives. */
 function scriptedOpponent(...replies: Uci[]) {
-  const asked: { fen: string; moves: readonly Uci[] }[] = [];
+  const asked: { fen: string; moves: readonly Uci[]; startFen?: string }[] = [];
   const pending: (() => void)[] = [];
   const opponent: Opponent = {
     elo: 1100,
     chooseMove(position) {
-      asked.push({ fen: position.fen, moves: [...position.moves] });
+      asked.push({ fen: position.fen, moves: [...position.moves], ...(position.startFen ? { startFen: position.startFen } : {}) });
       const reply = replies.shift();
       if (!reply) return Promise.reject(new Error('no scripted reply left'));
       return new Promise((resolve) => pending.push(() => resolve(reply)));
@@ -170,6 +170,13 @@ describe('GameSession: starting position and hints', () => {
     session.resign();
     expect(records[0]).toMatchObject({ startFen: FORK, moves: [] });
     expect(records[0]!.pgn).toContain(`[FEN "${FORK}"]`);
+  });
+
+  it('tells the opponent which position the moves start from', async () => {
+    const { opponent, asked } = scriptedOpponent('e8d7');
+    const session = new GameSession({ userColor: 'white', opponent, startFen: FORK });
+    void session.playUserMove('b5c7');
+    expect(asked).toEqual([{ fen: '4k3/2N4p/q7/8/8/8/7P/4K3 b - - 1 1', moves: ['b5c7'], startFen: FORK }]);
   });
 
   it('leaves startFen out of the record for a normal game', () => {
