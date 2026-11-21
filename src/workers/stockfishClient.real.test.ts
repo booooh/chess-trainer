@@ -1,24 +1,10 @@
 // @vitest-environment node
 // Contract test: StockfishClient against the real Stockfish 19 Lite wasm (the same build the
-// browser loads), run through the npm package's Node entry point. The fake in
+// browser loads), run in Node (see nodeStockfish.testutil.ts). The fake in
 // stockfishClient.test.ts covers edge cases; this checks the fake matches reality.
-import initEngine from 'stockfish';
 import { describe, expect, it } from 'vitest';
-import { StockfishClient, type UciWorkerLike } from './stockfishClient';
-
-/** Wraps the Node engine in the same shape as a browser Worker. */
-function nodeStockfish(): UciWorkerLike {
-  const engine = initEngine('lite-single');
-  let onMessage: ((e: MessageEvent<unknown>) => void) | null = null;
-  engine.listener = (line) => onMessage?.({ data: line } as MessageEvent<unknown>);
-  return {
-    postMessage: (cmd) => engine.processCommand(cmd),
-    addEventListener: (type: 'message' | 'error', fn: (e: never) => void) => {
-      if (type === 'message') onMessage = fn as (e: MessageEvent<unknown>) => void;
-    },
-    terminate: () => engine.processCommand('quit'),
-  };
-}
+import { nodeStockfish } from './nodeStockfish.testutil';
+import { StockfishClient } from './stockfishClient';
 
 describe('StockfishClient with real Stockfish', () => {
   it('finds mate in one, keeps a queue, and recovers after an abort', { timeout: 20_000 }, async () => {
