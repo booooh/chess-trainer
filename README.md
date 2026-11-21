@@ -50,10 +50,12 @@ already have instead, set `PW_CHROMIUM_PATH` to its executable.
 Hosted on Cloudflare Pages, deployed from CI with Wrangler ([ADR-0009](docs/adr/0009-cloudflare-pages-previews.md)).
 Nothing deploys until lint, type-check, unit tests and e2e tests have passed.
 
-- **Production:** every push to `main` is deployed to https://chess-trainer.pages.dev.
+- **Production:** every push to `main` is deployed to https://chess-trainer-dri.pages.dev.
+  The project is called `chess-trainer`, but that subdomain was already taken on `pages.dev`, so
+  Cloudflare added `-dri`. Use the URLs CI prints rather than guessing from the project name.
 - **Previews:** every pull request from a branch of this repo gets its own preview, and CI
   posts the link as a PR comment (updated on each push). The link stays the same for the
-  branch: `https://<branch-name>.chess-trainer.pages.dev` (Cloudflare lowercases the name and
+  branch: `https://<branch-name>.chess-trainer-dri.pages.dev` (Cloudflare lowercases the name and
   replaces other characters with `-`). Previews have their own storage, so they
   never touch production's saved games.
 - **Headers:** `public/_headers` sets long-lived caching for the content-hashed files in

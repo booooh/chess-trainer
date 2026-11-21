@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       new_url:
-        description: 'New address of the app, e.g. https://chess-trainer.pages.dev/'
+        description: 'New address of the app, e.g. https://chess-trainer-dri.pages.dev/'
         required: true
         type: string
 
