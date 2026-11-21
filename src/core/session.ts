@@ -1,5 +1,4 @@
 import { Game, type Color, type GameStatus, type GameResult, type Square, type Uci } from './game';
-import type { MoveWarning } from './blunders';
 import type { GameRecord, HintLevel } from './records';
 
 /** Anything that can pick a move for the computer side (MaiaOpponent, or a fake in tests). */
@@ -9,6 +8,16 @@ export interface Opponent {
   chooseMove(position: { fen: string; moves: readonly Uci[]; startFen?: string }, signal?: AbortSignal): Promise<Uci>;
 }
 
+/** The position the user moves in: its FEN, and the moves that led to it. */
+export type Position = { fen: string; moves: readonly Uci[] };
+
+/** Why a move is held back before it's final (DESIGN §5.4). */
+export type MoveWarning =
+  /** The blunder warning: one sentence; `square` marks a piece left to be taken. */
+  | { kind: 'blunder'; text: string; square?: Square }
+  /** "Why not?": the user played something other than the hint's move, and it's clearly worse. */
+  | { kind: 'whyNot'; steps: string[]; better: { from: Square; to: Square; san: string } };
+
 /**
  * Looks at the user's moves before they're final (the blunder warning, DESIGN §5.4).
  * Implemented by `BlunderChecker`; tests use fakes.
@@ -16,8 +25,12 @@ export interface Opponent {
 export interface MoveChecker {
   /** Called whenever it's the user's turn, so the position can be analysed ahead. */
   prepare(fen: string): void;
-  /** A warning if `uci` played in `fen` is a blunder, otherwise null. Should never reject. */
-  check(fen: string, uci: Uci, signal: AbortSignal): Promise<MoveWarning | null>;
+  /**
+   * A warning if playing `uci` in `position` deserves one, otherwise null. Should never
+   * reject. Called before the session announces the move, so a checker can still read
+   * state tied to the position (e.g. the hint shown there).
+   */
+  check(position: Position, uci: Uci, signal: AbortSignal): Promise<MoveWarning | null>;
 }
 
 /**
@@ -117,15 +130,16 @@ export class GameSession {
     if (this.thinking || this.review || this.game.turn !== this.options.userColor) {
       throw new Error(`not your turn: ${uci}`);
     }
-    const fenBefore = this.game.fen;
+    const before: Position = { fen: this.game.fen, moves: [...this.game.moves] };
     this.game.play(uci); // throws IllegalMoveError, leaving everything unchanged
     const checker = this.options.moveChecker;
     if (checker) {
       const abort = new AbortController();
       this.reviewAbort = abort;
       this.review = { status: 'checking' };
+      const checking = checker.check(before, uci, abort.signal); // before anyone hears of the move
       this.changed();
-      const warning = await checker.check(fenBefore, uci, abort.signal);
+      const warning = await checking;
       if (abort.signal.aborted) return; // resigned or disposed meanwhile
       this.reviewAbort = undefined;
       if (warning) {

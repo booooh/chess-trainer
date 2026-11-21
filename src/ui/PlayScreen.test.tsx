@@ -10,7 +10,7 @@ describe('PlayScreen: blunder warning', () => {
     const opponent: Opponent = { elo: 1100, chooseMove: async () => 'e7e5' };
     const checker: MoveChecker = {
       prepare: () => {},
-      check: async (_fen, uci) => (uci === 'f2f3' ? { text: 'This weakens your king.', square: 'f3' } : null),
+      check: async (_position, uci) => (uci === 'f2f3' ? { kind: 'blunder', text: 'This weakens your king.', square: 'f3' } : null),
     };
     const session = new GameSession({ userColor: 'white', opponent, moveChecker: checker });
     const hints = new HintCoach(

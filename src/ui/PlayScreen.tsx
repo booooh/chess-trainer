@@ -71,7 +71,7 @@ export function PlayScreen({ session, hints, elo, onNewGame }: Props) {
   const warning = s.review?.status === 'warning' ? s.review.warning : undefined;
   const hintShapesNow = useMemo(() => hintShapes(hint), [hint]);
   const warningShapes = useMemo<BoardShape[]>(
-    () => (warning?.square ? [{ orig: warning.square, brush: 'red' }] : []),
+    () => (warning?.kind === 'blunder' && warning.square ? [{ orig: warning.square, brush: 'red' }] : []),
     [warning],
   );
   const shapes = warning ? warningShapes : yourTurn ? hintShapesNow : undefined;
@@ -126,7 +126,7 @@ export function PlayScreen({ session, hints, elo, onNewGame }: Props) {
           </div>
         )}
 
-        {warning && (
+        {warning?.kind === 'blunder' && (
           <section className="warning-panel" role="alertdialog" aria-label="Are you sure?">
             <p>{warning.text}</p>
             <div className="actions">

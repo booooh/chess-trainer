@@ -330,10 +330,10 @@ describe('GameSession: blunder warning', () => {
     let gate: Promise<void> = Promise.resolve();
     const checker: MoveChecker = {
       prepare: (fen) => void prepared.push(fen),
-      async check(fen, uci) {
+      async check({ fen }, uci) {
         checked.push({ fen, uci });
         await gate;
-        return warnAbout[uci] ? { text: warnAbout[uci] } : null;
+        return warnAbout[uci] ? { kind: 'blunder', text: warnAbout[uci] } : null;
       },
     };
     return { checker, prepared, checked, hold: () => void (gate = new Promise(() => {})) };
@@ -375,7 +375,7 @@ describe('GameSession: blunder warning', () => {
     await session.playUserMove('f2f3');
     expect(session.state).toMatchObject({
       moves: ['f2f3'],
-      review: { status: 'warning', warning: { text: 'This weakens your king.' } },
+      review: { status: 'warning', warning: { kind: 'blunder', text: 'This weakens your king.' } },
       thinking: false,
       canTakeBack: false,
     });

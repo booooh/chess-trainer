@@ -5,6 +5,7 @@ import type { Engine, Score } from './engine';
 import { moveFacts, scoreToCp } from './facts';
 import { Game, type DrawReason, type Square, type Uci } from './game';
 import { describeBlunder } from './narrator';
+import type { MoveWarning, Position } from './session';
 
 export type Blunder =
   /** After the move, the opponent has a forced mate in `inMoves`. */
@@ -77,9 +78,6 @@ export function assessMove(
   return lossCp >= lossThresholdCp ? { kind: 'loses', lossCp } : null;
 }
 
-/** What the UI shows before a blunder is played. `square` marks the piece left hanging. */
-export type MoveWarning = { text: string; square?: Square };
-
 export type BlunderCheckerOptions = {
   /** Thinking time for the position before the move, spent while the user thinks. Default 1000. */
   prepareMs?: number;
@@ -120,7 +118,7 @@ export class BlunderChecker {
   }
 
   /** A warning if playing `uci` in `fen` is a blunder, otherwise null. Never rejects. */
-  async check(fen: string, uci: Uci, signal: AbortSignal): Promise<MoveWarning | null> {
+  async check({ fen }: Position, uci: Uci, signal: AbortSignal): Promise<MoveWarning | null> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<null>((resolve) => (timer = setTimeout(() => resolve(null), this.options.timeoutMs)));
     try {
@@ -149,6 +147,6 @@ export class BlunderChecker {
     if (!game.isOver && !reply) return null;
     const blunder = assessMove(fen, uci, best, reply, this.options.assess);
     if (!blunder) return null;
-    return { text: describeBlunder(blunder), ...(blunder.kind === 'hangs' ? { square: blunder.square } : {}) };
+    return { kind: 'blunder', text: describeBlunder(blunder), ...(blunder.kind === 'hangs' ? { square: blunder.square } : {}) };
   }
 }
