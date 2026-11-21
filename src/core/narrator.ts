@@ -70,6 +70,59 @@ export function describeBlunder(b: Blunder): string {
   }
 }
 
+/**
+ * "Why not?" (DESIGN §5.4): why the move the user played (`yours`) is worse than the hint's
+ * (`hint`). Both lines start in `fen`. First what goes wrong after the user's move, then what
+ * the hint's move does instead. Deliberately short: the hint's own explanation has the rest.
+ */
+export function explainWhyNot(hint: TeachingLine, yours: TeachingLine, { fen, userColor }: { fen: string; userColor: Color }): string[] {
+  const steps: string[] = [];
+  const [mine, reply] = yours.plies;
+  if (reply) {
+    const taken = capturedPiece(reply);
+    steps.push(`After ${mine!.san}, most players reply ${reply.san}${taken ? `, taking your ${NAMES[taken.type]}` : ''}.`);
+  } else if (mine!.san.endsWith('#')) {
+    steps.push(`${mine!.san} is checkmate too.`);
+  } else {
+    steps.push(`After ${mine!.san}, the game is over.`);
+  }
+
+  const net = netMaterial(fen, yours.plies, userColor);
+  const leftHanging = find(mine!.facts, 'hanging');
+  if (yours.score.type === 'mate' && yours.score.value < 0) {
+    steps.push('From there your opponent can force checkmate.');
+  } else if (net <= -100 && scoreToCp(yours.score) <= -100) {
+    steps.push(`Overall you lose material worth about ${pawns(-net)}.`);
+  } else if (leftHanging && leftHanging.piece.color === userColor && !capturedPiece(reply ?? mine!)) {
+    steps.push(`Your ${NAMES[leftHanging.piece.type]} on ${leftHanging.square} is left to be taken.`);
+  }
+
+  steps.push(`${hint.plies[0]!.san} was better: ${whyBetter(hint, yours, fen, userColor)}.`);
+  return steps;
+}
+
+function whyBetter(hint: TeachingLine, yours: TeachingLine, fen: string, userColor: Color): string {
+  const first = hint.plies[0]!;
+  if (first.san.endsWith('#')) return 'it’s checkmate';
+  if (hint.score.type === 'mate' && hint.score.value > 0) return `it forces checkmate in ${hint.score.value} moves`;
+  const fork = find(first.facts, 'fork');
+  if (fork) {
+    const board = Board.fromFen(first.fenBefore);
+    const names = fork.targets.map((sq) => `the ${NAMES[board.get(sq)!.type]}`);
+    return `it forks ${list(names)}`;
+  }
+  const net = netMaterial(fen, hint.plies, userColor);
+  if (net >= 100 && scoreToCp(hint.score) >= WINNING_CP) return `it wins material worth about ${pawns(net)}`;
+  const diff = Math.min(1000, scoreToCp(hint.score)) - Math.max(-1000, scoreToCp(yours.score));
+  return diff < 100 ? 'Stockfish rates it a little higher' : `Stockfish rates it about ${pawns(diff)} higher`;
+}
+
+/** "a pawn", "3 pawns" (centipawns, rounded). */
+function pawns(cp: number): string {
+  const n = Math.max(1, Math.round(cp / 100));
+  return n === 1 ? 'a pawn' : `${n} pawns`;
+}
+
 function nudge(line: TeachingLine, fen: string, userColor: Color, engineAgrees: boolean): string {
   const first = line.plies[0]!;
   if (first.san.endsWith('#')) return 'You can checkmate in one move.';
