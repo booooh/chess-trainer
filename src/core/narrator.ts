@@ -1,9 +1,10 @@
 // The template narrator (DESIGN §5.1, §5.3): turns a teaching line and its facts into the text
 // of each hint level. Deterministic and offline, so a hint always appears; LLM narrators can
 // rephrase the same facts later (ADR-0004), but may not add to them.
+import type { Blunder } from './blunders';
 import { Board, materialBalance, otherColor, type Piece, type PieceType } from './board';
 import { hangingPieces, scoreToCp, type Fact } from './facts';
-import { Game, type Color, type Square } from './game';
+import { Game, type Color, type DrawReason, type Square } from './game';
 import type { TeachingLine, TeachingPly } from './teachingLine';
 
 export type HintText = {
@@ -37,6 +38,36 @@ export function narrate(line: TeachingLine, { fen, userColor }: { fen: string; u
     move: { from, to, text: `Play ${first.san}.` },
     explanation: explain(line, fen, userColor, engineAgrees),
   };
+}
+
+const DRAWS: Record<DrawReason, string> = {
+  stalemate: 'This is stalemate',
+  threefoldRepetition: 'This repeats the position a third time',
+  insufficientMaterial: 'This leaves too little material to checkmate',
+  fiftyMoves: 'This reaches the fifty-move rule',
+};
+
+/** The blunder warning's text: why the move the user is about to play is a mistake. */
+export function describeBlunder(b: Blunder): string {
+  switch (b.kind) {
+    case 'allowsMate':
+      return b.inMoves === 1
+        ? 'After this, your opponent can checkmate you in one move.'
+        : `After this, your opponent has a forced checkmate in ${b.inMoves} moves.`;
+    case 'missesMate':
+      return b.inMoves === 1
+        ? 'You can checkmate in one move, and this isn’t it.'
+        : `You have a forced checkmate in ${b.inMoves} moves, and this move lets it slip.`;
+    case 'draws':
+      return `${DRAWS[b.reason]}: the game ends in a draw, though you stand better.`;
+    case 'hangs':
+      return `This leaves your ${NAMES[b.piece.type]} on ${b.square} to be taken.`;
+    case 'loses': {
+      const pawns = Math.max(1, Math.round(b.lossCp / 100));
+      const worth = pawns === 1 ? 'a pawn’s' : `${pawns} pawns’`;
+      return `This loses about ${worth} worth compared with the best move.`;
+    }
+  }
 }
 
 function nudge(line: TeachingLine, fen: string, userColor: Color, engineAgrees: boolean): string {

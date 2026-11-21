@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Score } from './engine';
 import { moveFacts } from './facts';
 import { Game, type Uci } from './game';
-import { narrate } from './narrator';
+import { describeBlunder, narrate } from './narrator';
 import type { TeachingLine, TeachingPly } from './teachingLine';
 
 /** Plays `moves` from `fen`, alternating you/opponent, with the real facts on each ply. */
@@ -103,5 +103,23 @@ describe('narrate', () => {
     const hint = narrate(teachingLine(fen, ['a1a7', 'e8d8', 'a7h7'], cp(500)), { fen, userColor: 'white' });
     expect(hint.nudge).toBe('No tactic here: look for a move that improves your position.');
     expect(hint.explanation[0]).toBe('Play Ra7.');
+  });
+});
+
+describe('describeBlunder', () => {
+  it('explains each kind of blunder in a sentence', () => {
+    expect(describeBlunder({ kind: 'allowsMate', inMoves: 1 })).toBe('After this, your opponent can checkmate you in one move.');
+    expect(describeBlunder({ kind: 'allowsMate', inMoves: 3 })).toBe('After this, your opponent has a forced checkmate in 3 moves.');
+    expect(describeBlunder({ kind: 'missesMate', inMoves: 1 })).toBe('You can checkmate in one move, and this isn’t it.');
+    expect(describeBlunder({ kind: 'missesMate', inMoves: 2 })).toBe('You have a forced checkmate in 2 moves, and this move lets it slip.');
+    expect(describeBlunder({ kind: 'draws', reason: 'stalemate' })).toBe('This is stalemate: the game ends in a draw, though you stand better.');
+    expect(describeBlunder({ kind: 'draws', reason: 'threefoldRepetition' })).toBe(
+      'This repeats the position a third time: the game ends in a draw, though you stand better.',
+    );
+    expect(describeBlunder({ kind: 'hangs', piece: { color: 'white', type: 'n' }, square: 'd4', lossCp: 300 })).toBe(
+      'This leaves your knight on d4 to be taken.',
+    );
+    expect(describeBlunder({ kind: 'loses', lossCp: 260 })).toBe('This loses about 3 pawns’ worth compared with the best move.');
+    expect(describeBlunder({ kind: 'loses', lossCp: 140 })).toBe('This loses about a pawn’s worth compared with the best move.');
   });
 });
