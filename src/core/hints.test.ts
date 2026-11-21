@@ -155,3 +155,42 @@ describe('HintCoach', () => {
     expect(c.state).toEqual({ status: 'none' });
   });
 });
+
+describe('HintCoach.moveTo', () => {
+  const next = { fen: after(FORK, 'e1d2'), moves: ['e1d2'] as Uci[] };
+
+  it('hides the hint when the game moves on, and brings it back when it returns', async () => {
+    const { engine, release } = heldEngine();
+    const levels: HintLevel[] = [];
+    const c = coach(engine, levels);
+    c.moveTo(position);
+    const first = c.more(position);
+    await release();
+    await first;
+    await c.more(position);
+    await c.more(position);
+    expect(c.state).toMatchObject({ status: 'shown', level: 3 });
+
+    c.moveTo(next);
+    expect(c.state).toEqual({ status: 'idle' });
+    c.moveTo(position); // e.g. "Go back" after "why not?"
+    expect(c.state).toMatchObject({ status: 'shown', level: 3 });
+    expect(levels).toEqual([1, 2, 3]); // restoring isn't a new hint
+    await c.more(position);
+    expect(c.state).toMatchObject({ status: 'shown', level: 4 });
+  });
+
+  it('keeps the same position as it is, and stops thinking for a position left behind', async () => {
+    const { engine, release } = heldEngine();
+    const c = coach(engine);
+    c.moveTo(position);
+    void c.more(position);
+    c.moveTo(position);
+    expect(c.state).toEqual({ status: 'thinking' });
+    c.moveTo(next);
+    await release();
+    expect(c.state).toEqual({ status: 'idle' });
+    c.moveTo(position);
+    expect(c.state).toEqual({ status: 'idle' }); // nothing was shown there to bring back
+  });
+});
