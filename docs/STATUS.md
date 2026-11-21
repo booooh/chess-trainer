@@ -1,6 +1,6 @@
 # Project status and handoff
 
-Last updated: 2026-11-21, phase 2 step 1 (Cloudflare Pages) merged in PR #6. Phase 1: PRs #1–#5.
+Last updated: 2026-11-21, phase 2 step 1 done (PRs #6, #7), step 2 (Stockfish worker) in review.
 Read this first when picking the project up in a new session, then `DESIGN.md` and the ADRs.
 
 ## Where things stand
@@ -9,7 +9,7 @@ Read this first when picking the project up in a new session, then `DESIGN.md` a
 |---|---|---|
 | 0. Skeleton | ✅ Done (PR #2) | Installs on the phone; CI runs on every PR |
 | 1. Play | ✅ Done (PRs #3, #4, #5) | Ben played a full game against Maia 1100 on a Pixel 10 |
-| 2. Hints | 🚧 **In progress** | Step 1 (Cloudflare Pages, ADR-0009) done in PR #6; step 2 next. Plan below |
+| 2. Hints | 🚧 **In progress** | Step 1 (Cloudflare Pages) ✅. Step 2 (Stockfish worker) in review. Plan below |
 | 3–6, v1.x, v2 | Not started | See `DESIGN.md` §9 |
 
 **Live app:** https://chess-trainer-dri.pages.dev (Cloudflare Pages, ADR-0009). It deploys from `main`
@@ -17,7 +17,7 @@ only after CI passes, and every PR from this repo gets a preview at
 `https://<branch-name>.chess-trainer-dri.pages.dev`, linked in a PR comment. The Pages project is
 named `chess-trainer`, but that `pages.dev` subdomain was taken, so Cloudflare added `-dri`;
 `https://chess-trainer.pages.dev` is someone else's site. The old address,
-https://booooh.github.io/chess-trainer/, still serves the phase 1 app until the "moved" page replaces it.
+https://booooh.github.io/chess-trainer/, now shows a "moved" page.
 
 ### What the app does today
 - New game: play as White, Black or Random against Maia-3 rated 400–1500 (Lichess scale, default 1100).
@@ -26,6 +26,7 @@ https://booooh.github.io/chess-trainer/, still serves the phase 1 app until the 
 - Status line, move list, resign (with confirmation), retry if Maia fails, and model download progress.
 - Finished games are saved to IndexedDB (`chess-trainer` database, `games` table, DESIGN §7 format).
 - AGPL-3.0 with a "Source code" link (ADR-0008). Installable PWA that works offline once Maia is cached.
+- Stockfish is wired in as `services.engine` but nothing calls it yet (the hint UI is step 5).
 
 ### Known limitations (deliberately left out so far)
 - A game in progress is lost on reload; only finished games are saved.
@@ -43,16 +44,20 @@ src/core/      Pure TS, no React (lint-enforced)
   opponent.ts    HumanMovePredictor interface, sampleMove (2% floor), MaiaOpponent
   session.ts     GameSession: turns, opponent calls, resign, retry, emits GameRecord once
   records.ts     GameRecord type + GameRepository interface
+  engine.ts      Engine interface (analyse → Line[]), Score/Line types, lazyEngine
+  uci.ts         Parses Stockfish's UCI output (info/bestmove) into Lines
 src/workers/   maia.worker.ts (Maia-3 via onnxruntime-web), maiaClient.ts (request ids, abort,
-               crash handling), maiaProtocol.ts (message types), download.ts (progress)
+               crash handling), maiaProtocol.ts (message types), download.ts (progress),
+               stockfishClient.ts (queue, stop/abort, start-up timeout; stockfish.js itself is
+               the worker and speaks raw UCI, so there's no protocol file or worker file)
 src/storage/   gameRepository.ts: Dexie implementation (add-only: games are immutable)
 src/ui/        Board (chessground wrapper), NewGameForm, PlayScreen, services (dependency
                injection: real ones in browserServices.ts, fakes in tests), gameOptions
-e2e/           Playwright on an emulated Pixel 7 against the production build (real Maia)
+e2e/           Playwright on an emulated Pixel 7 against the production build (real Maia, real Stockfish)
 spikes/maia/   strength.ts: re-runnable Maia strength-by-rating measurement (Node + Stockfish)
 ```
 
-Tests: 46 unit (Vitest) and 5 e2e (Playwright). CI is `.github/workflows/ci.yml`, with jobs
+Tests: 72 unit (Vitest, including one against real Stockfish in Node) and 6 e2e (Playwright). CI is `.github/workflows/ci.yml`, with jobs
 `check` → `e2e` → `deploy` (`main` only).
 
 ## Phase 2 plan: Hints
@@ -86,28 +91,43 @@ Gives every later phase 2 PR a preview link you can open on the phone before mer
 - Checked: the first deploy created the project. The preview and production both work
   (Ben, on the phone), and `/assets/*` is served with `immutable`.
 
-**Still to do:**
-1. Install the app on the phone from https://chess-trainer-dri.pages.dev, if not done yet.
-2. Run **Actions → Replace GitHub Pages site with a "moved" page** with
-   `https://chess-trainer-dri.pages.dev/`. Open the old
-   address on the phone to confirm it switches to the "moved" page.
-3. Later: turn GitHub Pages off (Settings → Pages), delete `github-pages-moved.yml` and
-   `legacy/`, and delete the `github-pages` environment.
+- Ben ran the "moved" workflow; the old address now shows the "moved" page.
+
+**Later (housekeeping):** turn GitHub Pages off (Settings → Pages), then delete
+`github-pages-moved.yml`, `legacy/` and the `github-pages` environment.
 
 ### Step 2: Stockfish engine worker (DESIGN §4.1, ADR-0002)
-- Use the `stockfish` npm package (19.0.1, already a devDependency for the spike; make it a
-  dependency). Use the **lite single-threaded** build: `bin/stockfish-19-lite-single.js` (28 KB)
-  plus `.wasm` (1.8 MB). It's GPL-3.0, which is compatible with our AGPL (ADR-0008).
-- **Pitfall to check:** stockfish.js finds its `.wasm` from its own script URL (`locateFile`).
-  Vite's hashed asset names can break that pairing. Options: serve both files unhashed from
-  `public/`, or point it at the wasm explicitly. Try it in the production build and the e2e test,
-  not just `vite dev`.
-- `EngineClient` in core: `analyse(fen, { multiPv: 3, movetimeMs: 1000–1500 }) → Promise<Line[]>`
-  where `Line = { move, scoreCp | mateIn, pv: Uci[], depth }`. It needs a request queue and
-  cancellation, because Stockfish runs one search at a time (`stop`, then wait for `bestmove`).
-  Parse UCI `info … multipv N … score cp|mate … pv …` lines in a pure, unit-tested function.
-- Mirror the Maia pattern: a protocol file, a worker, a main-thread client with a fake-worker test,
-  and injected services so UI tests use a fake engine.
+**Done (branch `phase-2-stockfish-engine`):**
+- `stockfish` 19.0.1 is a dependency (pinned). The app uses the **lite single-threaded** build:
+  `stockfish-19-lite-single.js` (28 KB) + `.wasm` (1.8 MB, 1.2 MB compressed). GPL-3.0, compatible with
+  our AGPL (ADR-0008).
+- **The wasm pitfall, solved:** both files are imported with Vite's `?url`, so each gets its own
+  content hash. stockfish.js reads an explicit wasm location from its URL's hash before
+  guessing from its own name, so the worker starts as `stockfish-<hash>.js#<encoded wasm URL>`
+  (`stockfishWorkerUrl`). The e2e test runs the built files; without the hash it fails.
+- `Engine` (in `src/core/engine.ts`): `analyse(fen, { multiPv, movetimeMs }, signal) → Line[]`, with
+  `Line = { move, score: {type:'cp'|'mate', value}, pv, depth }`. Scores are from the side to
+  move's point of view (UCI convention). Checkmate and stalemate give `[]`.
+- `uci.ts` parses real Stockfish output: the latest line per MultiPV slot wins (a stopped
+  search leaves slots at different depths), provisional `lowerbound`/`upperbound` lines are
+  skipped, and a stale slot that repeats a move is dropped.
+- `StockfishClient`: waits for `uciok`, runs one search at a time, resends MultiPV only when it
+  changes. Abort: a queued request is dropped; the running one gets `stop`, and the next search
+  waits for its `bestmove`. Refuses FENs and options that could inject UCI commands.
+  **A missing wasm raises no error event, the engine just never answers**, so a 30 s start-up
+  timeout rejects everything instead of leaving a hint spinning forever.
+- `services.engine` is a `lazyEngine`: the worker starts on the first `analyse`, so nobody downloads
+  Stockfish until the hint UI asks for it.
+
+**Still to do:**
+- Measure on the Pixel 10 once the hint UI exists: depth reached in 1–1.5 s, and the first
+  start-up time (download + compile). For reference, in Node in the cloud container: depth 13–16 in 300 ms.
+
+**Follow-up (not urgent): offline wasm.** `.wasm` files aren't precached or runtime-cached by the
+service worker (`globIgnores` in `vite.config.ts`). Offline they're served from the browser's HTTP
+cache, which works on Cloudflare thanks to `immutable` (checked: ORT's wasm loads offline on
+production after one visit), but the browser may evict it under storage pressure. A Workbox
+`runtimeCaching` CacheFirst rule for `/assets/*.wasm` would make it as durable as the Maia model.
 
 ### Step 3: Facts extractor (DESIGN §5.3, ADR-0004)
 Pure TS in `src/core/`, unit-tested on hand-picked FENs. Start with what the done-when needs:

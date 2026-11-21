@@ -36,9 +36,9 @@ already have instead, set `PW_CHROMIUM_PATH` to its executable.
 
 | Path | What |
 |---|---|
-| `src/core/` | Pure TypeScript domain logic, no React (lint-enforced): `Game`, `GameSession`, `MaiaOpponent` |
+| `src/core/` | Pure TypeScript domain logic, no React (lint-enforced): `Game`, `GameSession`, `MaiaOpponent`, the `Engine` interface and UCI parsing |
 | `src/ui/` | React components: chessground `Board` wrapper, new-game form, play screen |
-| `src/workers/` | Web Workers (Maia-3 via ONNX Runtime) and their typed main-thread clients |
+| `src/workers/` | Web Workers (Maia-3 via ONNX Runtime, Stockfish 19 Lite) and their typed main-thread clients |
 | `src/storage/` | IndexedDB (Dexie) implementations of core repository interfaces |
 | `e2e/` | Playwright tests, run on an emulated Pixel 7 |
 | `spikes/` | Throwaway experiments and measurements (see `docs/spikes/`) |

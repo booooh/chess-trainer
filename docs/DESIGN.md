@@ -97,8 +97,11 @@ Runs in a Web Worker and is spoken to with UCI text commands. Used **only for an
 - `MultiPV 3` so we get several candidate moves, not just one.
 - Phone budget: about 1–1.5 s per hint (`go movetime`), which reaches depth ~14–18. That's
   far more than enough to find the tactics that matter at 600–1000.
-- A small `EngineClient` wrapper turns UCI text into typed results:
-  `{ move, scoreCp | mateIn, pv: Move[], depth }[]`.
+- The `Engine` interface (`src/core/engine.ts`), implemented by `StockfishClient`, turns UCI
+  text into typed results: `{ move, score: cp | mate, pv: Uci[], depth }[]`, scored from the side
+  to move's point of view. One search at a time, queued and cancellable.
+- Build: Stockfish 19 **Lite, single-threaded** (1.8 MB wasm; no cross-origin isolation needed).
+  Started on first use, not at app start.
 
 ### 4.2 Maia-3 — the "human"
 
