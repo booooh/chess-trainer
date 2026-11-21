@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { assessMove } from './blunders';
-import type { Score } from './engine';
+import { assessMove, BlunderChecker } from './blunders';
+import type { AnalyseOptions, Engine, Line, Score } from './engine';
+import { Game } from './game';
 
 const cp = (value: number): Score => ({ type: 'cp', value });
 const mate = (value: number): Score => ({ type: 'mate', value });
@@ -61,5 +62,88 @@ describe('assessMove', () => {
     const fen = 'k7/8/1K6/8/8/8/8/2Q5 w - - 0 1';
     expect(assessMove(fen, 'c1c7', mate(1), null)).toEqual({ kind: 'draws', reason: 'stalemate' });
     expect(assessMove(fen, 'c1c7', cp(-300), null)).toBeNull(); // a draw from a worse position is fine
+  });
+});
+
+describe('BlunderChecker', () => {
+  const after = (fen: string, uci: string) => {
+    const g = new Game(fen);
+    g.play(uci);
+    return g.fen;
+  };
+  const line = (score: Score): Line[] => [{ move: 'a1a1', score, pv: [], depth: 10 }];
+
+  /** An engine with a score per position, which records each call and can be held back. */
+  function fakeEngine(scores: Map<string, Score>) {
+    const calls: { fen: string; options: AnalyseOptions; signal?: AbortSignal }[] = [];
+    let gate: Promise<void> = Promise.resolve();
+    let fail = false;
+    const engine: Engine = {
+      async analyse(fen, options, signal) {
+        calls.push({ fen, options, ...(signal ? { signal } : {}) });
+        await gate;
+        if (fail) throw new Error('engine crashed');
+        const score = scores.get(fen);
+        return score ? line(score) : [];
+      },
+    };
+    return {
+      engine,
+      calls,
+      /** Searches don't finish until the test says so (or never). */
+      hold: () => void (gate = new Promise<void>(() => {})),
+      fail: () => void (fail = true),
+    };
+  }
+
+  it('analyses the position ahead, then only the reply position after the move', async () => {
+    const f = fakeEngine(new Map([[QUEEN, cp(100)], [after(QUEEN, 'd1d5'), cp(800)]]));
+    const checker = new BlunderChecker(f.engine, { prepareMs: 1000, replyMs: 300 });
+    checker.prepare(QUEEN);
+    checker.prepare(QUEEN); // same position: no second search
+    const warning = await checker.check(QUEEN, 'd1d5', new AbortController().signal);
+    expect(warning).toEqual({ text: 'This leaves your queen on d5 to be taken.', square: 'd5' });
+    expect(f.calls.map((c) => [c.fen, c.options])).toEqual([
+      [QUEEN, { multiPv: 1, movetimeMs: 1000 }],
+      [after(QUEEN, 'd1d5'), { multiPv: 1, movetimeMs: 300 }],
+    ]);
+  });
+
+  it('returns null for a good move, and prepares on its own if needed', async () => {
+    const f = fakeEngine(new Map([[QUEEN, cp(100)], [after(QUEEN, 'd1d2'), cp(-90)]]));
+    const checker = new BlunderChecker(f.engine);
+    expect(await checker.check(QUEEN, 'd1d2', new AbortController().signal)).toBeNull();
+    expect(f.calls).toHaveLength(2);
+  });
+
+  it('does not search after a move that ends the game', async () => {
+    const fen = 'k7/8/1K6/8/8/8/8/2Q5 w - - 0 1';
+    const f = fakeEngine(new Map([[fen, mate(1)]]));
+    const checker = new BlunderChecker(f.engine);
+    expect(await checker.check(fen, 'c1c7', new AbortController().signal)).toEqual({
+      text: 'This is stalemate: the game ends in a draw, though you stand better.',
+    });
+    expect(f.calls).toHaveLength(1);
+  });
+
+  it('cancels the search for a position the game has left', () => {
+    const f = fakeEngine(new Map());
+    f.hold();
+    const checker = new BlunderChecker(f.engine);
+    checker.prepare(QUEEN);
+    checker.prepare(after(QUEEN, 'd1d2'));
+    expect(f.calls[0]!.signal!.aborted).toBe(true);
+    expect(f.calls[1]!.signal!.aborted).toBe(false);
+  });
+
+  it('never stands in the way of a move: failures and slow engines give no warning', async () => {
+    const failing = fakeEngine(new Map());
+    failing.fail();
+    expect(await new BlunderChecker(failing.engine).check(QUEEN, 'd1d5', new AbortController().signal)).toBeNull();
+
+    const slow = fakeEngine(new Map([[QUEEN, cp(100)], [after(QUEEN, 'd1d5'), cp(800)]]));
+    slow.hold();
+    const checker = new BlunderChecker(slow.engine, { timeoutMs: 20 });
+    expect(await checker.check(QUEEN, 'd1d5', new AbortController().signal)).toBeNull();
   });
 });
