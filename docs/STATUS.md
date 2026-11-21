@@ -1,6 +1,6 @@
 # Project status and handoff
 
-Last updated: 2026-11-21, phase 2 steps 1–5 built (step 1 in PRs #6, #7; steps 2–5 on draft PR #8). Next: Ben tries hints on the phone.
+Last updated: 2026-11-21, phase 2 done (PRs #6, #7, #8; hints checked on the phone). Next: phase 2b, coaching while playing.
 Read this first when picking the project up in a new session, then `DESIGN.md` and the ADRs.
 
 ## Where things stand
@@ -9,7 +9,8 @@ Read this first when picking the project up in a new session, then `DESIGN.md` a
 |---|---|---|
 | 0. Skeleton | ✅ Done (PR #2) | Installs on the phone; CI runs on every PR |
 | 1. Play | ✅ Done (PRs #3, #4, #5) | Ben played a full game against Maia 1100 on a Pixel 10 |
-| 2. Hints | 🚧 **Built, in review** | Step 1 ✅. Steps 2–5 on draft PR #8; done-when e2e passes. Waiting on a phone check |
+| 2. Hints | ✅ Done (PRs #6, #7, #8) | Ben checked hints on the phone; done-when e2e passes |
+| 2b. Coaching while playing | ⏭️ **Next** (Ben to confirm order vs. phase 3) | Undo, blunder warning, "why not?" (DESIGN §5.4) |
 | 3–6, v1.x, v2 | Not started | See `DESIGN.md` §9 |
 
 **Live app:** https://chess-trainer-dri.pages.dev (Cloudflare Pages, ADR-0009). It deploys from `main`
@@ -208,11 +209,24 @@ when the eval agrees.
 - **Bug found by it:** maia3-js replays `moves` from the standard start unless given `baseFen`, so
   every Maia call failed in practice positions. `startFen` now travels with each request.
 
-**Still to do:**
-- Ben: try hints on the phone (preview link on PR #8), e.g. with
-  `?fen=4k3/7p/q7/1N6/8/8/7P/4K3%20w%20-%20-%200%201`, and in normal games. Note how long a
-  hint takes on the Pixel 10 (the first one includes starting Stockfish).
-- Then mark PR #8 ready, merge, and close phase 2.
+- Ben tried it on the phone: everything works as expected.
+- Not measured yet: how long a hint takes on the Pixel 10 (the first one includes starting
+  Stockfish). Worth timing when tuning the blunder warning, which needs fast analysis.
+
+## Next: phase 2b, coaching while playing (DESIGN §5.4)
+Requested by Ben after using phase 2 hints. Build in this order, test-first as usual:
+1. **Undo:** take back your move and Maia's reply (repeat to go further back). Needs
+   `Game.undo`, a `GameSession.takeBack()` that cancels a pending Maia reply, dropping
+   `hintsUsed` entries for undone plies, and an Undo button. Decide whether records count
+   take-backs.
+2. **Blunder warning** (option on the new-game form, off by default): before playing a move
+   that drops ≥ ~200 cp versus the best, allows or misses a mate, or newly hangs a piece, ask
+   "Play anyway / Take it back". Pre-analyse while it's your turn so the check after your move
+   is a short search. Reuses `moveFacts` and the narrator for the reason.
+3. **"Why not?":** after a hint, if you play a different move, build the teaching line for your
+   move too, compare it with the hint's line, explain why it's worse, then let you continue or
+   go back (undo) and play the hint's move. Done when: play a different move after a hint, read
+   why it's worse, go back and play the hint's move.
 
 ### Open questions for phase 2 (also in DESIGN §10)
 - Threshold for "teachable but slightly worse" moves.
