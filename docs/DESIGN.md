@@ -212,7 +212,10 @@ Requested by Ben after trying phase 2 hints. In build order, since each needs th
    line for *your* move too (Maia's likely reply, then Stockfish), compares the two lines'
    facts and scores, and explains the difference: "After Nf3?, most players reply …Qxb5 and
    you lose the knight. Nc7+ wins the queen instead." Then you choose: **continue** with your
-   move, or **go back** (undo) and play the hint's move.
+   move, or **go back** (undo) and play the hint's move. Built: only for moves clearly worse
+   than the hint's (≥ half a pawn, or a forced mate let go); like the blunder warning, the
+   move is held back before Maia replies, and going back brings the hint back. When there's
+   a hint, "why not?" replaces the blunder warning for that move.
 
 ## 6. Openings
 
@@ -303,4 +306,5 @@ Current status and the detailed plan for the next phase: [`docs/STATUS.md`](STAT
 - ~~Maia-3's behaviour below 1100~~: answered by the phase 1 spike (`docs/spikes/maia-3.md`).
   It plays measurably weaker down to at least 400, so the 600–1000 range is possible in v1.
 - Exact hint threshold for "teachable but slightly worse" moves: tune from real games.
+- "Why not?" threshold (now 50 cp) and blunder thresholds (§5.4, now 200 cp): tune from real games.
 - Whether hints used should affect the game record or stats (e.g. mark the game "assisted").
