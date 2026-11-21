@@ -50,6 +50,11 @@ export type TeachingLineOptions = {
   minPlies?: number;
   /** Lines never go beyond this, even mid-exchange. Default 7. */
   maxPlies?: number;
+  /**
+   * Teach this move instead of choosing one: the line for a move the user played, to
+   * compare with the hint's ("why not?", DESIGN §5.4). Throws IllegalMoveError if illegal.
+   */
+  firstMove?: Uci;
 };
 
 type Deps = { engine: Engine; predictor: HumanMovePredictor };
@@ -73,10 +78,14 @@ export async function buildTeachingLine(
   signal?: AbortSignal,
 ): Promise<TeachingLine | null> {
   const { marginCp = 30, firstMovetimeMs = 1200, followMovetimeMs = 400, minPlies = 3, maxPlies = 7 } = options;
-  const lines = await engine.analyse(req.fen, { multiPv: 3, movetimeMs: firstMovetimeMs }, signal);
-  if (lines.length === 0) return null;
-
-  const chosen = await chooseFirstMove(req, lines, marginCp, predictor, signal);
+  let chosen: Line;
+  if (options.firstMove) {
+    chosen = await lineFor(req.fen, options.firstMove, engine, firstMovetimeMs, signal);
+  } else {
+    const lines = await engine.analyse(req.fen, { multiPv: 3, movetimeMs: firstMovetimeMs }, signal);
+    if (lines.length === 0) return null;
+    chosen = await chooseFirstMove(req, lines, marginCp, predictor, signal);
+  }
   const done = (plies: TeachingPly[]) =>
     plies.length >= maxPlies || (plies.length >= minPlies && !isForcing(plies.at(-1)!.san));
 
@@ -147,6 +156,29 @@ async function chooseFirstMove(
   }));
   ranked.sort((a, b) => Number(b.motif) - Number(a.motif) || b.likelihood - a.likelihood || a.order - b.order);
   return ranked[0]!.line;
+}
+
+/**
+ * Stockfish's line for one given move: it analyses the position after the move (from the
+ * opponent's side), and the result is turned round to the user's point of view.
+ */
+async function lineFor(fen: string, move: Uci, engine: Engine, movetimeMs: number, signal?: AbortSignal): Promise<Line> {
+  const game = new Game(fen);
+  game.play(move); // throws IllegalMoveError
+  if (game.isOver) {
+    const score: Score = game.status.kind === 'checkmate' ? { type: 'mate', value: 1 } : { type: 'cp', value: 0 };
+    return { move, score, pv: [move], depth: 0 };
+  }
+  const [reply] = await engine.analyse(game.fen, { multiPv: 1, movetimeMs }, signal);
+  if (!reply) throw new Error(`no analysis after ${move}`);
+  return { move, score: unflip(reply.score), pv: [move, ...reply.pv], depth: reply.depth };
+}
+
+/** The inverse of `flip`: the mover's view of a score given from the next side to move. */
+function unflip(score: Score): Score {
+  if (score.type === 'cp') return { type: 'cp', value: -score.value };
+  // The opponent mates in n: the user is mated in n. The opponent is mated in n: the user mates in n + 1.
+  return { type: 'mate', value: score.value > 0 ? -score.value : -score.value + 1 };
 }
 
 /** Maia replays `moves` from the start position, so it needs to know a custom one. */
