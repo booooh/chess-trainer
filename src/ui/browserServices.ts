@@ -1,8 +1,14 @@
+// stockfish.js runs as a classic (non-module) worker and loads its .wasm itself. `?url` makes
+// Vite copy both files into the build (with content hashes) without bundling them.
+import stockfishScriptUrl from 'stockfish/bin/stockfish-19-lite-single.js?url';
+import stockfishWasmUrl from 'stockfish/bin/stockfish-19-lite-single.wasm?url';
+import { lazyEngine } from '../core/engine';
 import { ChessTrainerDb, DexieGameRepository } from '../storage/gameRepository';
 import { MaiaClient } from '../workers/maiaClient';
+import { StockfishClient, stockfishWorkerUrl } from '../workers/stockfishClient';
 import { ModelStatusStore, type AppServices } from './services';
 
-/** The real services: Maia in a Web Worker and games in IndexedDB. */
+/** The real services: Maia and Stockfish in Web Workers, and games in IndexedDB. */
 export function createBrowserServices(): AppServices {
   const modelStatus = new ModelStatusStore();
   // Start loading Maia straight away, so it's usually ready before the first opponent move.
@@ -16,6 +22,8 @@ export function createBrowserServices(): AppServices {
   );
   return {
     predictor: maia,
+    // Lite single-threaded build (ADR-0002): 1.8 MB, and no cross-origin isolation needed.
+    engine: lazyEngine(() => new StockfishClient(new Worker(stockfishWorkerUrl(stockfishScriptUrl, stockfishWasmUrl)))),
     modelStatus,
     repository: new DexieGameRepository(new ChessTrainerDb()),
     random: Math.random,

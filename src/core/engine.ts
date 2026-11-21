@@ -39,3 +39,14 @@ export interface Engine {
    */
   analyse(fen: string, options: AnalyseOptions, signal?: AbortSignal): Promise<Line[]>;
 }
+
+/**
+ * An Engine that only creates the real one on first use. Starting Stockfish costs a download,
+ * a wasm compile and memory, which is wasted until someone actually asks for a hint.
+ */
+export function lazyEngine(create: () => Engine): Engine {
+  let engine: Engine | null = null;
+  return {
+    analyse: (fen, options, signal) => (engine ??= create()).analyse(fen, options, signal),
+  };
+}

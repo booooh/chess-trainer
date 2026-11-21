@@ -2,6 +2,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import App from './App';
+import type { Engine } from './core/engine';
 import type { HumanMovePredictor } from './core/opponent';
 import type { GameRecord, GameRepository } from './core/records';
 import { ModelStatusStore, type AppServices } from './ui/services';
@@ -16,9 +17,10 @@ function fakeServices(overrides: Partial<AppServices> = {}) {
   const predictor: HumanMovePredictor = {
     predict: async ({ fen }) => new Map([[fen.includes(' w ') ? 'e2e4' : 'e7e5', 1]]),
   };
+  const engine: Engine = { analyse: async () => [] };
   const modelStatus = new ModelStatusStore();
   modelStatus.set({ state: 'ready' });
-  const services: AppServices = { predictor, repository, modelStatus, random: () => 0, ...overrides };
+  const services: AppServices = { predictor, engine, repository, modelStatus, random: () => 0, ...overrides };
   return { services, saved };
 }
 
