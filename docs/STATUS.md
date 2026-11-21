@@ -1,6 +1,6 @@
 # Project status and handoff
 
-Last updated: 2026-11-20, phase 2 step 1 (Cloudflare Pages) in review. Phase 1: PRs #1–#5, all merged.
+Last updated: 2026-11-21, phase 2 step 1 (Cloudflare Pages) merged in PR #6. Phase 1: PRs #1–#5.
 Read this first when picking the project up in a new session, then `DESIGN.md` and the ADRs.
 
 ## Where things stand
@@ -9,11 +9,15 @@ Read this first when picking the project up in a new session, then `DESIGN.md` a
 |---|---|---|
 | 0. Skeleton | ✅ Done (PR #2) | Installs on the phone; CI runs on every PR |
 | 1. Play | ✅ Done (PRs #3, #4, #5) | Ben played a full game against Maia 1100 on a Pixel 10 |
-| 2. Hints | 🚧 **In progress** | Step 1 (Cloudflare Pages, ADR-0009) in review. Plan below |
+| 2. Hints | 🚧 **In progress** | Step 1 (Cloudflare Pages, ADR-0009) done in PR #6; step 2 next. Plan below |
 | 3–6, v1.x, v2 | Not started | See `DESIGN.md` §9 |
 
-**Live app:** https://booooh.github.io/chess-trainer/ until the Cloudflare PR merges; then
-https://chess-trainer.pages.dev (ADR-0009). Both deploy from `main` only after CI passes.
+**Live app:** https://chess-trainer-dri.pages.dev (Cloudflare Pages, ADR-0009). It deploys from `main`
+only after CI passes, and every PR from this repo gets a preview at
+`https://<branch-name>.chess-trainer-dri.pages.dev`, linked in a PR comment. The Pages project is
+named `chess-trainer`, but that `pages.dev` subdomain was taken, so Cloudflare added `-dri`;
+`https://chess-trainer.pages.dev` is someone else's site. The old address,
+https://booooh.github.io/chess-trainer/, still serves the phase 1 app until the "moved" page replaces it.
 
 ### What the app does today
 - New game: play as White, Black or Random against Maia-3 rated 400–1500 (Lichess scale, default 1100).
@@ -59,7 +63,7 @@ Goal (DESIGN §9): *a level-4 hint explains a fork correctly.* Work in this orde
 ### Step 1: Move hosting to Cloudflare Pages with PR previews (ADR-0009)
 Gives every later phase 2 PR a preview link you can open on the phone before merging.
 
-**Done (branch `phase-2-cloudflare-pages`):**
+**Done (PR #6):**
 - Ben created the API token (*Account → Cloudflare Pages → Edit*) and added the repository
   secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
 - `ci.yml`: the `e2e` job uploads the `dist/` it tested; `deploy` downloads it and runs
@@ -79,14 +83,15 @@ Gives every later phase 2 PR a preview link you can open on the phone before mer
   "moved" page with no service worker or caches left.
 - ADR-0009 Accepted, ADR-0007 Superseded, README "Deployment" and DESIGN §3 updated.
 
+- Checked: the first deploy created the project. The preview and production both work
+  (Ben, on the phone), and `/assets/*` is served with `immutable`.
+
 **Still to do:**
-1. On the PR: check the deploy job passes (the first run creates the project), tap the preview
-   link on the phone, play a few moves. If Cloudflare gave the project a different `pages.dev`
-   subdomain (name taken), fix the URLs in README and here.
-2. Merge, then confirm production at https://chess-trainer.pages.dev and install it on the phone.
-3. Run **Actions → Replace GitHub Pages site with a "moved" page** with the new URL. Open the old
+1. Install the app on the phone from https://chess-trainer-dri.pages.dev, if not done yet.
+2. Run **Actions → Replace GitHub Pages site with a "moved" page** with
+   `https://chess-trainer-dri.pages.dev/`. Open the old
    address on the phone to confirm it switches to the "moved" page.
-4. Later: turn GitHub Pages off (Settings → Pages), delete `github-pages-moved.yml` and
+3. Later: turn GitHub Pages off (Settings → Pages), delete `github-pages-moved.yml` and
    `legacy/`, and delete the `github-pages` environment.
 
 ### Step 2: Stockfish engine worker (DESIGN §4.1, ADR-0002)
