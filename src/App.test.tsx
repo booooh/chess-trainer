@@ -47,6 +47,28 @@ describe('App', () => {
     expect(within(setup).getByRole('radio', { name: 'White' })).toBeChecked();
     expect(within(setup).getByRole('combobox', { name: /opponent strength/i })).toHaveValue('1100');
     expect(within(setup).getByRole('button', { name: 'Start game' })).toBeEnabled();
+    expect(within(setup).getByRole('checkbox', { name: /warn me before a blunder/i })).not.toBeChecked();
+  });
+
+  it('with the blunder warning on, analyses your position ahead while it is your move', async () => {
+    const user = userEvent.setup();
+    const analysed: string[] = [];
+    const engine: Engine = { analyse: async (fen) => (analysed.push(fen), []) };
+    render(<App services={fakeServices({ engine }).services} />);
+    await user.click(screen.getByRole('checkbox', { name: /warn me before a blunder/i }));
+    await user.click(screen.getByRole('button', { name: 'Start game' }));
+    await screen.findByText('Your move');
+    expect(analysed).toEqual([new Game().fen]);
+  });
+
+  it('with the blunder warning off, leaves Stockfish alone', async () => {
+    const user = userEvent.setup();
+    const analysed: string[] = [];
+    const engine: Engine = { analyse: async (fen) => (analysed.push(fen), []) };
+    render(<App services={fakeServices({ engine }).services} />);
+    await user.click(screen.getByRole('button', { name: 'Start game' }));
+    await screen.findByText('Your move');
+    expect(analysed).toEqual([]);
   });
 
   it('as black, Maia moves first and then it is your move', async () => {
@@ -77,6 +99,19 @@ describe('App', () => {
     await waitFor(() => expect(saved.map((g) => g.result)).toEqual(['0-1']));
     await user.click(screen.getByRole('button', { name: 'New game' }));
     expect(screen.getByRole('form', { name: 'New game' })).toBeInTheDocument();
+  });
+
+  it('offers Undo during a game, disabled until you have moved', async () => {
+    const user = userEvent.setup();
+    render(<App services={fakeServices().services} />);
+    await user.click(screen.getByRole('radio', { name: 'Black' }));
+    await user.click(screen.getByRole('button', { name: 'Start game' }));
+    await screen.findByText('Your move');
+    // Maia's first move isn't yours to take back. (Moving pieces is covered by e2e/play.spec.ts.)
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Resign' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm resign' }));
+    expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
   });
 
   it('shows Maia download progress until the model is ready', () => {

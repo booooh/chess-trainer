@@ -31,10 +31,13 @@ export type HintCoachOptions = {
 };
 
 type Position = { fen: string; moves: readonly Uci[] };
+const keyOf = (p: Position) => `${p.moves.length} ${p.fen}`;
 
 export class HintCoach {
   private current: HintState = { status: 'idle' };
   private key: string | null = null;
+  /** The last hint shown, kept so `moveTo` can bring it back if the game returns there. */
+  private saved: { key: string; state: HintState } | null = null;
   private abort: AbortController | null = null;
   private readonly listeners = new Set<() => void>();
 
@@ -54,7 +57,7 @@ export class HintCoach {
 
   /** The hint button: shows the next level for this position (building the hint if needed). */
   async more(position: Position): Promise<void> {
-    const key = `${position.moves.length} ${position.fen}`;
+    const key = keyOf(position);
     if (key !== this.key) this.reset();
     this.key = key;
 
@@ -85,6 +88,21 @@ export class HintCoach {
     } finally {
       if (this.abort === abort) this.abort = null;
     }
+  }
+
+  /**
+   * Follows the game to `position`. A hint for another position is hidden (and its analysis
+   * stopped); returning to the position of the last hint shown brings it back at the same
+   * level, e.g. after "Go back" on a "why not?" explanation.
+   */
+  moveTo(position: Position): void {
+    const key = keyOf(position);
+    if (key === this.key) return;
+    if (this.current.status === 'shown' && this.key) this.saved = { key: this.key, state: this.current };
+    const restore = this.saved?.key === key ? this.saved.state : null;
+    this.reset();
+    this.key = key;
+    if (restore) this.set(restore);
   }
 
   /** Hides the hint and stops any analysis in progress (e.g. the user moved). */

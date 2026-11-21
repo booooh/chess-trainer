@@ -2,6 +2,14 @@ import { Game } from '../core/game';
 
 export type ColorChoice = 'white' | 'black' | 'random';
 
+/** What the new-game form asks for. */
+export type GameChoice = {
+  color: ColorChoice;
+  elo: number;
+  /** Ask before playing a move that loses a lot (DESIGN §5.4). Off by default. */
+  warnBlunders: boolean;
+};
+
 /** Maia opponent ratings offered (Lichess scale). The phase 1 spike found Maia-3 plays
  *  measurably weaker all the way down to 400 (docs/spikes/maia-3.md). */
 export const ELO_CHOICES = [400, 500, 600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500];

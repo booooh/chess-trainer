@@ -23,6 +23,11 @@ export type GameRecord = {
    * `moves`: the hinted move is `moves[ply]`.
    */
   hintsUsed: { ply: number; level: HintLevel }[];
+  /**
+   * How many times the user took moves back during the game, if they did. Like hints, it
+   * shows how much help a game had; left out when zero.
+   */
+  takebacks?: number;
   openingKey?: string;
   schemaVersion: 1;
 };

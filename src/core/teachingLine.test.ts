@@ -223,3 +223,46 @@ describe('buildTeachingLine', () => {
     ).rejects.toMatchObject({ name: 'AbortError' });
   });
 });
+
+describe('buildTeachingLine with a given first move ("why not?")', () => {
+  it('teaches the move the user played: Stockfish judges the position after it', async () => {
+    // Ke2 ignores the fork. Stockfish, asked about the position after it, says Black is fine.
+    const afterKe2 = after(FORK, 'e1e2');
+    const engine = new FakeEngine(
+      new Map([
+        [afterKe2, [line(cp(20), 'a8a2', 'e2d3')]],
+        [after(afterKe2, 'a8a2'), [line(cp(-20), 'e2d3')]],
+      ]),
+    );
+    const predictor = new FakePredictor(new Map([[afterKe2, [['a8a2', 0.5], ['e8d7', 0.5]]]]));
+
+    const result = await buildTeachingLine(request, { engine, predictor }, { firstMove: 'e1e2', minPlies: 2 });
+
+    expect(result!.plies.map((p) => [p.san, p.side])).toEqual([
+      ['Ke2', 'you'],
+      ['Ra2+', 'opponent'], // a check, so the line goes on…
+      ['Kd3', 'you'],
+    ]);
+    expect(result!.score).toEqual(cp(-20)); // the user's view of Ke2
+    expect(result!.bestDefence).toBeNull(); // Maia found Stockfish's reply
+    expect(engine.calls[0]).toEqual({ fen: afterKe2, options: { multiPv: 1, movetimeMs: 1200 } });
+  });
+
+  it('turns a mate for the opponent into the user’s view, and handles a move that ends the game', async () => {
+    const MATE_IN_ONE = '6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1';
+    const engine = new FakeEngine(new Map([[after(MATE_IN_ONE, 'a1a2'), [line({ type: 'mate', value: -3 }, 'g8f8')]]]));
+    const predictor = new FakePredictor(new Map([[after(MATE_IN_ONE, 'a1a2'), [['g8f8', 1]]]]));
+    const slow = await buildTeachingLine({ ...request, fen: MATE_IN_ONE }, { engine, predictor }, { firstMove: 'a1a2', maxPlies: 1 });
+    expect(slow!.score).toEqual({ type: 'mate', value: 4 }); // Black is mated in 3 after Ra2: White mates in 4
+
+    const mate = await buildTeachingLine({ ...request, fen: MATE_IN_ONE }, { engine, predictor }, { firstMove: 'a1a8' });
+    expect(mate!.plies.map((p) => p.san)).toEqual(['Ra8#']);
+    expect(mate!.score).toEqual({ type: 'mate', value: 1 });
+  });
+
+  it('rejects an illegal first move', async () => {
+    const engine = new FakeEngine(new Map());
+    const predictor = new FakePredictor(new Map());
+    await expect(buildTeachingLine(request, { engine, predictor }, { firstMove: 'e1e5' })).rejects.toThrow(/illegal/);
+  });
+});

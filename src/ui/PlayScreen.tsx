@@ -13,6 +13,8 @@ const PROMOTION_PIECES = [
 
 function statusText(s: SessionState): string {
   const you = s.userColor;
+  if (s.review?.status === 'checking') return 'Checking your move…';
+  if (s.review) return s.review.warning.kind === 'blunder' ? 'Are you sure?' : 'There was a better move.';
   switch (s.status.kind) {
     case 'playing':
       return s.thinking ? 'Maia is thinking…' : 'Your move';
@@ -64,13 +66,23 @@ export function PlayScreen({ session, hints, elo, onNewGame }: Props) {
   const hint = useSyncExternalStore(hints.subscribe, () => hints.state);
   const [promotion, setPromotion] = useState<[Square, Square] | null>(null);
   const [confirmResign, setConfirmResign] = useState(false);
-  const over = s.status.kind !== 'playing';
-  const yourTurn = !over && !s.thinking && s.turn === s.userColor;
-  const shapes = useMemo(() => hintShapes(hint), [hint]);
+  // A move under review may end the game, but isn't final until the user confirms it.
+  const over = s.status.kind !== 'playing' && !s.review;
+  const yourTurn = !over && !s.thinking && !s.review && s.turn === s.userColor;
+  const warning = s.review?.status === 'warning' ? s.review.warning : undefined;
+  const hintShapesNow = useMemo(() => hintShapes(hint), [hint]);
+  // A blunder circles the piece left hanging in red; "why not?" shows the better move as an arrow.
+  const warningShapes = useMemo<BoardShape[]>(() => {
+    if (warning?.kind === 'whyNot') return [{ orig: warning.better.from, dest: warning.better.to }];
+    return warning?.square ? [{ orig: warning.square, brush: 'red' }] : [];
+  }, [warning]);
+  const shapes = warning ? warningShapes : yourTurn ? hintShapesNow : undefined;
   const hintLabel = yourTurn ? hintButtonLabel(hint) : null;
 
-  // A hint belongs to one position: hide it as soon as a move is made.
-  useEffect(() => hints.reset(), [hints, s.moves.length]);
+  // A hint belongs to one position: hide it as soon as a move is made, and bring it back if
+  // the move is taken back ("Go back" after "why not?").
+  const { fen, moves } = s;
+  useEffect(() => hints.moveTo({ fen, moves }), [hints, fen, moves]);
 
   const play = (uci: string) => {
     // An illegal move just leaves the position as it was; the board re-syncs from state.
@@ -90,7 +102,7 @@ export function PlayScreen({ session, hints, elo, onNewGame }: Props) {
         dests={promotion ? new Map() : s.dests}
         userColor={s.userColor}
         onMove={onMove}
-        shapes={yourTurn ? shapes : undefined}
+        shapes={shapes}
       />
       <section className="panel play" aria-label="Game">
         <p className="opponent">
@@ -98,7 +110,7 @@ export function PlayScreen({ session, hints, elo, onNewGame }: Props) {
         </p>
         <p className="status" role="status">
           {s.error ? `Maia couldn't move: ${s.error}` : statusText(s)}
-          {s.inCheck && !over && !s.thinking && <strong className="check"> Check!</strong>}
+          {s.inCheck && !over && !s.thinking && !s.review && <strong className="check"> Check!</strong>}
         </p>
 
         {promotion && (
@@ -116,6 +128,38 @@ export function PlayScreen({ session, hints, elo, onNewGame }: Props) {
               </button>
             ))}
           </div>
+        )}
+
+        {warning?.kind === 'blunder' && (
+          <section className="warning-panel" role="alertdialog" aria-label="Are you sure?">
+            <p>{warning.text}</p>
+            <div className="actions">
+              <button type="button" className="primary" onClick={() => session.reconsider()}>
+                Take it back
+              </button>
+              <button type="button" onClick={() => void session.playAnyway()}>
+                Play anyway
+              </button>
+            </div>
+          </section>
+        )}
+
+        {warning?.kind === 'whyNot' && (
+          <section className="warning-panel" role="alertdialog" aria-label={`Why not ${s.san.at(-1)}?`}>
+            <ol className="explanation">
+              {warning.steps.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>
+            <div className="actions">
+              <button type="button" className="primary" onClick={() => session.reconsider()}>
+                Go back
+              </button>
+              <button type="button" onClick={() => void session.playAnyway()}>
+                Continue
+              </button>
+            </div>
+          </section>
         )}
 
         {yourTurn && (hint.status === 'shown' || hint.status === 'failed') && (
@@ -158,6 +202,18 @@ export function PlayScreen({ session, hints, elo, onNewGame }: Props) {
           {s.error && (
             <button type="button" className="primary" onClick={() => void session.retryOpponent()}>
               Retry
+            </button>
+          )}
+          {!over && (
+            <button
+              type="button"
+              disabled={!s.canTakeBack}
+              onClick={() => {
+                setPromotion(null);
+                session.takeBack();
+              }}
+            >
+              Undo
             </button>
           )}
           {over ? (

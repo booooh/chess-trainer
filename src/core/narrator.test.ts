@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Score } from './engine';
 import { moveFacts } from './facts';
 import { Game, type Uci } from './game';
-import { narrate } from './narrator';
+import { describeBlunder, explainWhyNot, narrate } from './narrator';
 import type { TeachingLine, TeachingPly } from './teachingLine';
 
 /** Plays `moves` from `fen`, alternating you/opponent, with the real facts on each ply. */
@@ -103,5 +103,74 @@ describe('narrate', () => {
     const hint = narrate(teachingLine(fen, ['a1a7', 'e8d8', 'a7h7'], cp(500)), { fen, userColor: 'white' });
     expect(hint.nudge).toBe('No tactic here: look for a move that improves your position.');
     expect(hint.explanation[0]).toBe('Play Ra7.');
+  });
+});
+
+describe('describeBlunder', () => {
+  it('explains each kind of blunder in a sentence', () => {
+    expect(describeBlunder({ kind: 'allowsMate', inMoves: 1 })).toBe('After this, your opponent can checkmate you in one move.');
+    expect(describeBlunder({ kind: 'allowsMate', inMoves: 3 })).toBe('After this, your opponent has a forced checkmate in 3 moves.');
+    expect(describeBlunder({ kind: 'missesMate', inMoves: 1 })).toBe('You can checkmate in one move, and this isn’t it.');
+    expect(describeBlunder({ kind: 'missesMate', inMoves: 2 })).toBe('You have a forced checkmate in 2 moves, and this move lets it slip.');
+    expect(describeBlunder({ kind: 'draws', reason: 'stalemate' })).toBe('This is stalemate: the game ends in a draw, though you stand better.');
+    expect(describeBlunder({ kind: 'draws', reason: 'threefoldRepetition' })).toBe(
+      'This repeats the position a third time: the game ends in a draw, though you stand better.',
+    );
+    expect(describeBlunder({ kind: 'hangs', piece: { color: 'white', type: 'n' }, square: 'd4', lossCp: 300 })).toBe(
+      'This leaves your knight on d4 to be taken.',
+    );
+    expect(describeBlunder({ kind: 'loses', lossCp: 260 })).toBe('This loses about 3 pawns’ worth compared with the best move.');
+    expect(describeBlunder({ kind: 'loses', lossCp: 140 })).toBe('This loses about a pawn’s worth compared with the best move.');
+  });
+});
+
+describe('explainWhyNot', () => {
+  const fork = teachingLine(QUEEN_FORK, ['b5c7', 'e8d7', 'c7a6', 'd7c6'], cp(650));
+  const why = (hint: TeachingLine, yours: TeachingLine, fen = QUEEN_FORK) => explainWhyNot(hint, yours, { fen, userColor: 'white' });
+
+  it('says what goes wrong after your move, then why the hint was better', () => {
+    const yours = teachingLine(QUEEN_FORK, ['e1d2', 'a6b5', 'h2h4'], cp(-850));
+    expect(why(fork, yours)).toEqual([
+      'After Kd2, most players reply Qxb5, taking your knight.',
+      'Overall you lose material worth about 3 pawns.',
+      'Nc7+ was better: it forks the king and the queen.',
+    ]);
+  });
+
+  it('points out a piece left to be taken, even if the likely reply misses it', () => {
+    const fen = '4k3/8/4p3/8/8/8/8/3QK3 w - - 0 1';
+    const hint = teachingLine(fen, ['d1d2', 'e8e7', 'd2d3'], cp(800));
+    const yours = teachingLine(fen, ['d1d5', 'e8e7', 'd5e5'], cp(-50));
+    expect(why(hint, yours, fen)).toEqual([
+      'After Qd5, most players reply Ke7.',
+      'Your queen on d5 is left to be taken.',
+      'Qd2 was better: Stockfish rates it about 9 pawns higher.',
+    ]);
+  });
+
+  it('talks about checkmate when there is one, on either side', () => {
+    const fen = '6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1';
+    const mate = teachingLine(fen, ['d1d8'], { type: 'mate', value: 1 });
+    const yours = teachingLine(fen, ['d1d7', 'g8f8', 'd7d8'], { type: 'mate', value: -2 });
+    expect(why(mate, yours, fen)).toEqual([
+      'After Rd7, most players reply Kf8.',
+      'From there your opponent can force checkmate.',
+      'Rd8# was better: it’s checkmate.',
+    ]);
+    const mateIn3 = teachingLine(fen, ['d1d7', 'g8f8', 'd7d8'], { type: 'mate', value: 3 });
+    expect(why(mateIn3, teachingLine(fen, ['g1f1', 'g8f8', 'd1d8'], cp(300)), fen).at(-1)).toBe(
+      'Rd7 was better: it forces checkmate in 3 moves.',
+    );
+  });
+
+  it('falls back on the engine’s numbers, half a pawn at least', () => {
+    const fen = '4k3/8/4p3/8/8/8/8/3QK3 w - - 0 1';
+    const hint = teachingLine(fen, ['d1d2', 'e8e7', 'd2d3'], cp(150));
+    expect(why(hint, teachingLine(fen, ['d1d3', 'e8e7', 'd3d4'], cp(90)), fen).at(-1)).toBe(
+      'Qd2 was better: Stockfish rates it a little higher.',
+    );
+    expect(why(hint, teachingLine(fen, ['d1d3', 'e8e7', 'd3d4'], cp(40)), fen).at(-1)).toBe(
+      'Qd2 was better: Stockfish rates it about a pawn higher.',
+    );
   });
 });

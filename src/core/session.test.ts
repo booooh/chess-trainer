@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Uci } from './game';
 import type { GameRecord } from './records';
-import { GameSession, type Opponent } from './session';
+import { GameSession, type MoveChecker, type Opponent } from './session';
 
 /** An opponent that plays scripted moves, and lets the test decide when each reply arrives. */
 function scriptedOpponent(...replies: Uci[]) {
@@ -214,5 +214,234 @@ describe('GameSession: starting position and hints', () => {
     session.noteHint(2);
     session.resign();
     expect(records[0]!.hintsUsed).toEqual([]);
+  });
+});
+
+describe('GameSession: taking moves back', () => {
+  /** Plays the user's move and lets the scripted opponent reply. */
+  async function exchange(session: GameSession, reply: () => Promise<void>, uci: Uci) {
+    const done = session.playUserMove(uci);
+    await reply();
+    await done;
+  }
+
+  it('on your turn, takes back your move and the reply, so it is your turn again', async () => {
+    const { opponent, reply } = scriptedOpponent('e7e5', 'b8c6');
+    const session = new GameSession({ userColor: 'white', opponent });
+    await session.start();
+    expect(session.state.canTakeBack).toBe(false);
+    await exchange(session, reply, 'e2e4');
+    await exchange(session, reply, 'g1f3');
+    expect(session.state.canTakeBack).toBe(true);
+
+    session.takeBack();
+    expect(session.state).toMatchObject({ moves: ['e2e4', 'e7e5'], turn: 'white', thinking: false });
+    expect(session.state.dests.get('g1')).toBeDefined();
+    session.takeBack();
+    expect(session.state).toMatchObject({ moves: [], turn: 'white', canTakeBack: false });
+    session.takeBack(); // nothing left: no-op
+    expect(session.state.moves).toEqual([]);
+  });
+
+  it("while the opponent thinks, takes back your move and ignores the reply when it comes", async () => {
+    const { opponent, asked, reply } = scriptedOpponent('e7e5', 'c7c5');
+    const signals: AbortSignal[] = [];
+    const watching: Opponent = { elo: 1100, chooseMove: (p, signal) => (signals.push(signal!), opponent.chooseMove(p, signal)) };
+    const s2 = new GameSession({ userColor: 'white', opponent: watching });
+    const done = s2.playUserMove('e2e4');
+    expect(s2.state).toMatchObject({ thinking: true, canTakeBack: true });
+    s2.takeBack();
+    expect(signals[0]!.aborted).toBe(true);
+    expect(s2.state).toMatchObject({ moves: [], thinking: false, turn: 'white' });
+    await reply(); // the cancelled request answers anyway
+    await done;
+    expect(s2.state.moves).toEqual([]);
+
+    // The game carries on normally afterwards.
+    await exchange(s2, reply, 'd2d4');
+    expect(s2.state.moves).toEqual(['d2d4', 'c7c5']);
+    expect(asked.map((a) => a.moves)).toEqual([['e2e4'], ['d2d4']]);
+  });
+
+  it('after the opponent failed to move, takes back your move and clears the error', async () => {
+    const opponent: Opponent = { elo: 1100, chooseMove: () => Promise.reject(new Error('worker crashed')) };
+    const session = new GameSession({ userColor: 'white', opponent });
+    await session.playUserMove('e2e4');
+    session.takeBack();
+    expect(session.state).toMatchObject({ moves: [], error: undefined, thinking: false });
+  });
+
+  it("as black, never takes back the opponent's first move on its own", async () => {
+    const { opponent, reply } = scriptedOpponent('e2e4', 'd2d4');
+    const session = new GameSession({ userColor: 'black', opponent });
+    const started = session.start();
+    expect(session.state.canTakeBack).toBe(false); // the opponent's first move is pending
+    await reply();
+    await started;
+    expect(session.state.canTakeBack).toBe(false);
+    await exchange(session, reply, 'e7e5');
+    session.takeBack();
+    expect(session.state).toMatchObject({ moves: ['e2e4'], turn: 'black' });
+  });
+
+  it('cannot take back once the game is over', async () => {
+    const { opponent, reply } = scriptedOpponent('e7e5', 'd8h4');
+    const session = new GameSession({ userColor: 'white', opponent });
+    await exchange(session, reply, 'f2f3');
+    await exchange(session, reply, 'g2g4');
+    expect(session.state.status.kind).toBe('checkmate');
+    expect(session.state.canTakeBack).toBe(false);
+    session.takeBack();
+    expect(session.state.moves).toHaveLength(4);
+  });
+
+  it('drops hints for the moves taken back, and counts take-backs in the record', async () => {
+    const records: GameRecord[] = [];
+    const { opponent, reply } = scriptedOpponent('e7e5', 'b8c6', 'g8f6');
+    const session = new GameSession({ userColor: 'white', opponent, onFinished: (r) => void records.push(r) });
+    session.noteHint(2);
+    await exchange(session, reply, 'e2e4');
+    session.noteHint(4);
+    await exchange(session, reply, 'g1f3');
+    session.takeBack(); // drops the level-4 hint for ply 2
+    await exchange(session, reply, 'f1c4');
+    session.resign();
+    expect(records[0]).toMatchObject({
+      moves: ['e2e4', 'e7e5', 'f1c4', 'g8f6'],
+      hintsUsed: [{ ply: 0, level: 2 }],
+      takebacks: 1,
+    });
+  });
+
+  it('leaves takebacks out of the record when there were none', () => {
+    const records: GameRecord[] = [];
+    const { opponent } = scriptedOpponent();
+    const session = new GameSession({ userColor: 'white', opponent, onFinished: (r) => void records.push(r) });
+    session.resign();
+    expect(records[0]).not.toHaveProperty('takebacks');
+  });
+});
+
+describe('GameSession: blunder warning', () => {
+  /** A checker that warns about the listed moves, and records what it was asked. */
+  function fakeChecker(warnAbout: Record<string, string>) {
+    const prepared: string[] = [];
+    const checked: { fen: string; uci: Uci }[] = [];
+    let gate: Promise<void> = Promise.resolve();
+    const checker: MoveChecker = {
+      prepare: (fen) => void prepared.push(fen),
+      async check({ fen }, uci) {
+        checked.push({ fen, uci });
+        await gate;
+        return warnAbout[uci] ? { kind: 'blunder', text: warnAbout[uci] } : null;
+      },
+    };
+    return { checker, prepared, checked, hold: () => void (gate = new Promise(() => {})) };
+  }
+  const START = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+  it('analyses ahead whenever it is your turn', async () => {
+    const { opponent, reply } = scriptedOpponent('e7e5');
+    const { checker, prepared } = fakeChecker({});
+    const session = new GameSession({ userColor: 'white', opponent, moveChecker: checker });
+    await session.start();
+    expect(prepared).toEqual([START]);
+    const done = session.playUserMove('e2e4');
+    await new Promise((r) => setTimeout(r, 0)); // the check finishes, then Maia is asked
+    await reply();
+    await done;
+    expect(prepared.at(-1)).toBe(session.state.fen);
+  });
+
+  it('plays a good move straight on, after checking it', async () => {
+    const { opponent, asked } = scriptedOpponent('e7e5');
+    const { checker, checked } = fakeChecker({});
+    const session = new GameSession({ userColor: 'white', opponent, moveChecker: checker });
+    await session.start();
+    void session.playUserMove('e2e4');
+    expect(session.state).toMatchObject({ moves: ['e2e4'], review: { status: 'checking' }, thinking: false });
+    expect(session.state.dests.size).toBe(0);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(checked).toEqual([{ fen: START, uci: 'e2e4' }]);
+    expect(session.state).toMatchObject({ review: undefined, thinking: true });
+    expect(asked).toHaveLength(1);
+  });
+
+  it('holds a blunder back: "Take it back" undoes it, and Maia is never asked', async () => {
+    const { opponent, asked } = scriptedOpponent('e7e5');
+    const { checker } = fakeChecker({ f2f3: 'This weakens your king.' });
+    const session = new GameSession({ userColor: 'white', opponent, moveChecker: checker });
+    await session.start();
+    await session.playUserMove('f2f3');
+    expect(session.state).toMatchObject({
+      moves: ['f2f3'],
+      review: { status: 'warning', warning: { kind: 'blunder', text: 'This weakens your king.' } },
+      thinking: false,
+      canTakeBack: false,
+    });
+    session.reconsider();
+    expect(session.state).toMatchObject({ moves: [], review: undefined, turn: 'white' });
+    expect(session.state.dests.get('e2')).toBeDefined();
+    expect(asked).toEqual([]);
+  });
+
+  it('"Play anyway" plays the blunder and asks Maia for her reply', async () => {
+    const { opponent, reply } = scriptedOpponent('e7e5');
+    const { checker } = fakeChecker({ f2f3: 'This weakens your king.' });
+    const session = new GameSession({ userColor: 'white', opponent, moveChecker: checker });
+    await session.playUserMove('f2f3');
+    const done = session.playAnyway();
+    expect(session.state).toMatchObject({ review: undefined, thinking: true });
+    await reply();
+    await done;
+    expect(session.state.moves).toEqual(['f2f3', 'e7e5']);
+  });
+
+  it('does not end the game until a game-ending blunder is confirmed', async () => {
+    const records: GameRecord[] = [];
+    const fen = 'k7/8/1K6/8/8/8/8/2Q5 w - - 0 1';
+    const { checker } = fakeChecker({ c1c7: 'This is stalemate.' });
+    const session = new GameSession({ userColor: 'white', opponent: scriptedOpponent().opponent, startFen: fen, moveChecker: checker, onFinished: (r) => void records.push(r) });
+    await session.playUserMove('c1c7');
+    expect(records).toEqual([]);
+    await session.playAnyway();
+    expect(records.map((r) => r.result)).toEqual(['1/2-1/2']);
+  });
+
+  it('resigning during a check drops the move being checked', async () => {
+    const records: GameRecord[] = [];
+    const { checker, hold } = fakeChecker({});
+    hold();
+    const session = new GameSession({ userColor: 'white', opponent: scriptedOpponent().opponent, moveChecker: checker, onFinished: (r) => void records.push(r) });
+    void session.playUserMove('e2e4');
+    session.resign();
+    expect(session.state).toMatchObject({ review: undefined, moves: [], status: { kind: 'resigned', winner: 'black' } });
+    expect(records[0]!.moves).toEqual([]);
+  });
+
+  it('goes straight on, without a "checking" pause, when the checker answers at once', async () => {
+    const { opponent } = scriptedOpponent('e7e5');
+    const seen: (string | undefined)[] = [];
+    const checker: MoveChecker = { prepare: () => {}, check: () => null };
+    const session = new GameSession({ userColor: 'white', opponent, moveChecker: checker });
+    session.subscribe(() => seen.push(session.state.review?.status));
+    void session.playUserMove('e2e4');
+    expect(session.state).toMatchObject({ review: undefined, thinking: true });
+    expect(seen).not.toContain('checking');
+  });
+
+  it('holds a move back at once when the checker warns at once', async () => {
+    const checker: MoveChecker = { prepare: () => {}, check: () => ({ kind: 'blunder', text: 'No!' }) };
+    const session = new GameSession({ userColor: 'white', opponent: scriptedOpponent().opponent, moveChecker: checker });
+    await session.playUserMove('f2f3');
+    expect(session.state.review).toEqual({ status: 'warning', warning: { kind: 'blunder', text: 'No!' } });
+  });
+
+  it('ignores the warning buttons when there is no warning', async () => {
+    const { checker } = fakeChecker({});
+    const session = new GameSession({ userColor: 'white', opponent: scriptedOpponent().opponent, moveChecker: checker });
+    session.reconsider();
+    await session.playAnyway();
+    expect(session.state.moves).toEqual([]);
   });
 });

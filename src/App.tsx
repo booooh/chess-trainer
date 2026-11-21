@@ -1,16 +1,18 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
+import { BlunderChecker } from './core/blunders';
 import type { Color } from './core/game';
 import { HintCoach } from './core/hints';
 import { MaiaOpponent } from './core/opponent';
 import { GameSession } from './core/session';
+import { CoachingChecker } from './core/whyNot';
 import { Board } from './ui/Board';
-import { DEFAULT_ELO, type ColorChoice } from './ui/gameOptions';
+import { DEFAULT_ELO, type ColorChoice, type GameChoice } from './ui/gameOptions';
 import { NewGameForm } from './ui/NewGameForm';
 import { PlayScreen } from './ui/PlayScreen';
 import type { AppServices } from './ui/services';
 import './App.css';
 
-type Playing = { session: GameSession; hints: HintCoach; elo: number };
+type Playing = { session: GameSession; hints: HintCoach; blunders: BlunderChecker | undefined; elo: number };
 
 type AppProps = {
   services: AppServices;
@@ -29,25 +31,35 @@ export default function App({ services, startFen }: AppProps) {
     () => () => {
       playing?.session.dispose();
       playing?.hints.dispose();
+      playing?.blunders?.dispose();
     },
     [playing],
   );
 
-  const start = (choice: { color: ColorChoice; elo: number }) => {
+  const start = (choice: GameChoice) => {
     const userColor: Color = choice.color === 'random' ? (services.random() < 0.5 ? 'white' : 'black') : choice.color;
+    const deps = { engine: services.engine, predictor: services.predictor };
+    // We don't know the user's rating yet, so the opponent's stands in for it.
+    const ratings = { userElo: choice.elo, opponentElo: choice.elo };
+    // Only start Stockfish for the blunder warning if it was asked for.
+    const blunders = choice.warnBlunders ? new BlunderChecker(services.engine) : undefined;
+    // "Why not?" after a hint (always on), otherwise the blunder warning (if on).
+    const moveChecker = new CoachingChecker(deps, {
+      // `hints` is created below; the checker only asks for it once moves are being played.
+      hint: () => (hints.state.status === 'shown' ? hints.state.line : null),
+      ...(blunders ? { blunders } : {}),
+      request: { userColor, ...ratings, ...(startFen ? { startFen } : {}) },
+    });
     const session = new GameSession({
       userColor,
       opponent: new MaiaOpponent(services.predictor, { elo: choice.elo, random: services.random }),
       startFen,
+      moveChecker,
       onFinished: (record) => services.repository.save(record).catch((err) => console.error('Saving the game failed', err)),
     });
-    const hints = new HintCoach(
-      { engine: services.engine, predictor: services.predictor },
-      // We don't know the user's rating yet, so the opponent's stands in for it.
-      { userColor, userElo: choice.elo, opponentElo: choice.elo, startFen, onLevel: (level) => session.noteHint(level) },
-    );
+    const hints = new HintCoach(deps, { userColor, ...ratings, startFen, onLevel: (level) => session.noteHint(level) });
     setElo(choice.elo);
-    setPlaying({ session, hints, elo: choice.elo });
+    setPlaying({ session, hints, blunders, elo: choice.elo });
     void session.start();
   };
 

@@ -23,11 +23,11 @@ export type BoardProps = {
   /** Which colour the user moves (needed for chessground's movable.color). */
   userColor?: Color;
   onMove?: (from: Square, to: Square) => void;
-  /** Highlights drawn by the app (not the user): a circle on `orig`, or an arrow to `dest`. */
+  /** Highlights drawn by the app (not the user): a circle on `orig`, or an arrow to `dest`. Green unless `brush` says otherwise. */
   shapes?: readonly BoardShape[];
 };
 
-export type BoardShape = { orig: Square; dest?: Square };
+export type BoardShape = { orig: Square; dest?: Square; brush?: 'green' | 'red' };
 
 const NO_SHAPES: readonly BoardShape[] = [];
 
@@ -85,7 +85,7 @@ export function Board({
   }, [fen, orientation, turnColor, lastMove, check, dests, userColor]);
 
   useEffect(() => {
-    api.current?.setAutoShapes(shapes.map((s): DrawShape => ({ orig: s.orig as Key, dest: s.dest as Key | undefined, brush: 'green' })));
+    api.current?.setAutoShapes(shapes.map((s): DrawShape => ({ orig: s.orig as Key, dest: s.dest as Key | undefined, brush: s.brush ?? 'green' })));
   }, [shapes]);
 
   return (

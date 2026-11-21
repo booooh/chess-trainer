@@ -1,6 +1,6 @@
 # Project status and handoff
 
-Last updated: 2026-11-21, phase 2 done (PRs #6, #7, #8; hints checked on the phone). Next: phase 2b, coaching while playing.
+Last updated: 2026-11-21, phase 2b built: Undo, blunder warning (both checked on the phone) and "why not?" (draft PR #9, branch `phase-2b-undo`). Next: Ben checks "why not?" on the phone, merge, then phase 3.
 Read this first when picking the project up in a new session, then `DESIGN.md` and the ADRs.
 
 ## Where things stand
@@ -10,7 +10,7 @@ Read this first when picking the project up in a new session, then `DESIGN.md` a
 | 0. Skeleton | ✅ Done (PR #2) | Installs on the phone; CI runs on every PR |
 | 1. Play | ✅ Done (PRs #3, #4, #5) | Ben played a full game against Maia 1100 on a Pixel 10 |
 | 2. Hints | ✅ Done (PRs #6, #7, #8) | Ben checked hints on the phone; done-when e2e passes |
-| 2b. Coaching while playing | ⏭️ **Next** (Ben to confirm order vs. phase 3) | Undo, blunder warning, "why not?" (DESIGN §5.4) |
+| 2b. Coaching while playing | 🚧 **Built, in review** (draft PR #9) | Undo ✅ and blunder warning ✅ (Ben checked on the phone); "why not?" built, done-when e2e passes; phone check pending |
 | 3–6, v1.x, v2 | Not started | See `DESIGN.md` §9 |
 
 **Live app:** https://chess-trainer-dri.pages.dev (Cloudflare Pages, ADR-0009). It deploys from `main`
@@ -29,13 +29,24 @@ https://booooh.github.io/chess-trainer/, now shows a "moved" page.
 - AGPL-3.0 with a "Source code" link (ADR-0008). Installable PWA that works offline once Maia is cached.
 - **Hints** (phase 2): on your turn, Hint shows a nudge; More help reveals the piece (circled), the move
   (arrow), then the line explained step by step. The highest level per move goes in `hintsUsed`.
+- **"Why not?"** (phase 2b, always on): after a hint, a different move that's clearly worse (≥ half
+  a pawn, or a forced mate let go) is held back, but only if there's a concrete reason to give
+  (material, a piece left to be taken, a mate, a fork) or it loses ≥ 2 pawns. The panel explains what goes wrong after your
+  move and why the hint's move is better (shown as an arrow), with *Go back* (the hint comes
+  back) or *Continue*.
+- **Blunder warning** (phase 2b, "Warn me before a blunder" on the new-game form, off by default):
+  a move that loses ≥ 2 pawns versus the best, allows a forced mate, misses a mate in ≤ 3,
+  throws a better position away with a draw, or leaves a piece to be won is held back with
+  "Are you sure?", the reason, *Take it back* and *Play anyway*. A hanging piece is circled in red.
+- **Undo** (phase 2b): takes back your move and Maia's reply (only your move if she's still
+  thinking, which cancels her reply). Only while the game is on. The record counts take-backs.
 - **Practice positions:** `?fen=<FEN>` in the URL starts games from that position (invalid or
   finished positions are ignored). Games record it as `startFen`.
 
 ### Known limitations (deliberately left out so far)
 - A game in progress is lost on reload; only finished games are saved.
 - No screen lists saved games yet (comes with phase 3 or 6).
-- No take-backs, draw offers or clocks (timed play is v1.x).
+- No draw offers or clocks (timed play is v1.x). No undo after the game ends (the record is saved by then).
 - The opponent never plays moves Maia rates under 2% (`DEFAULT_FLOOR` in `src/core/opponent.ts`).
   That makes it slightly stronger than in the spike's measurements. Tune by feel.
 - The default rating of 1100 is a guess. Maia uses Lichess ratings, which run higher than chess.com's (`docs/spikes/maia-3.md`).
@@ -55,6 +66,8 @@ src/core/      Pure TS, no React (lint-enforced)
   teachingLine.ts buildTeachingLine: Stockfish for the user, Maia for the opponent, best-defence branch
   narrator.ts    Template narrator: the text of the four hint levels
   hints.ts       HintCoach: the hint ladder (one more level per press), per position
+  blunders.ts    assessMove (is this move a blunder? as typed facts), BlunderChecker (engine side)
+  whyNot.ts      isClearlyWorse, CoachingChecker: "why not?" after a hint, else the blunder check
 src/workers/   maia.worker.ts (Maia-3 via onnxruntime-web), maiaClient.ts (request ids, abort,
                crash handling), maiaProtocol.ts (message types), download.ts (progress),
                stockfishClient.ts (queue, stop/abort, start-up timeout; stockfish.js itself is
@@ -67,7 +80,7 @@ e2e/           Playwright on an emulated Pixel 7 against the production build (r
 spikes/maia/   strength.ts: re-runnable Maia strength-by-rating measurement (Node + Stockfish)
 ```
 
-Tests: 137 unit (Vitest; two use real Stockfish in Node) and 7 e2e (Playwright). CI is `.github/workflows/ci.yml`, with jobs
+Tests: 196 unit (Vitest; two use real Stockfish in Node) and 11 e2e (Playwright). CI is `.github/workflows/ci.yml`, with jobs
 `check` → `e2e` → `deploy` (`main` only).
 
 ## Phase 2 plan: Hints
@@ -213,20 +226,81 @@ when the eval agrees.
 - Not measured yet: how long a hint takes on the Pixel 10 (the first one includes starting
   Stockfish). Worth timing when tuning the blunder warning, which needs fast analysis.
 
-## Next: phase 2b, coaching while playing (DESIGN §5.4)
+## Phase 2b: coaching while playing (DESIGN §5.4)
 Requested by Ben after using phase 2 hints. Build in this order, test-first as usual:
-1. **Undo:** take back your move and Maia's reply (repeat to go further back). Needs
-   `Game.undo`, a `GameSession.takeBack()` that cancels a pending Maia reply, dropping
-   `hintsUsed` entries for undone plies, and an Undo button. Decide whether records count
-   take-backs.
-2. **Blunder warning** (option on the new-game form, off by default): before playing a move
-   that drops ≥ ~200 cp versus the best, allows or misses a mate, or newly hangs a piece, ask
-   "Play anyway / Take it back". Pre-analyse while it's your turn so the check after your move
-   is a short search. Reuses `moveFacts` and the narrator for the reason.
-3. **"Why not?":** after a hint, if you play a different move, build the teaching line for your
-   move too, compare it with the hint's line, explain why it's worse, then let you continue or
-   go back (undo) and play the hint's move. Done when: play a different move after a hint, read
-   why it's worse, go back and play the hint's move.
+1. **Undo: done** (branch `phase-2b-undo`).
+   - `Game.undo()` pops one ply (refused after a resignation; a checkmate can be undone at
+     this level, but the session doesn't offer it).
+   - `GameSession.takeBack()` undoes plies until it's the user's turn again, so it's one ply
+     while Maia is thinking or has failed, two otherwise. `state.canTakeBack` is false before
+     the user's first move (e.g. Maia's opening move as Black) and once the game is over.
+   - Each opponent request now has its own `AbortController` (was one per session), so a
+     take-back cancels Maia's pending reply and the session goes on. A reply that arrives
+     after cancelling is ignored.
+   - Records: optional `takebacks` count (left out when zero, so old records still match the
+     type; `schemaVersion` stays 1). `hintsUsed` entries for undone plies are dropped.
+   - UI: Undo button between Hint and Resign, disabled when there's nothing to take back.
+     Disabled buttons are now dimmed (they looked enabled before, e.g. "Thinking…").
+   - Tests: unit tests for Game/GameSession/App, plus an e2e test (e4, undo, d4 against the real Maia).
+2. **Blunder warning: done** (draft PR #9, same branch).
+   - `assessMove(fen, uci, best, reply)` in `blunders.ts` is pure: from Stockfish's score before
+     the move (`best`) and after it (`reply`, the opponent's view, or null if the game ended) it
+     returns a typed `Blunder`, first match wins: `allowsMate` (unless already lost to a mate),
+     `draws` (the move ends the game in a draw while ≥ +200), `missesMate` (only mates in ≤ 3,
+     which a player can be expected to see), `hangs` (a newly hanging own piece from
+     `moveFacts`, *and* the engine agrees it costs ≥ 100 cp, so sacrifices pass), `loses` (≥ 200 cp).
+     Scores are capped at ±1000 before comparing: +15 → +11 is still winning, not a blunder.
+   - `describeBlunder` in the narrator gives the sentence, e.g. "This leaves your queen on d5 to
+     be taken." It deliberately doesn't name the better move: that's what Hint is for.
+   - `BlunderChecker`: `prepare(fen)` searches the position for 1 s while it's your turn (same
+     FEN: no new search; new FEN: the old search is aborted); `check` then searches the position
+     after your move for 0.3 s. **It never blocks a move:** an engine error or a check slower
+     than 5 s (e.g. Stockfish still starting) means no warning.
+   - `GameSession` takes an optional `MoveChecker`. The move is played on the board at once and
+     Maia's reply waits: `state.review` is `checking`, then cleared or `warning`, and
+     `playAnyway()` / `reconsider()` decide. A move under review doesn't end the game (so a
+     stalemating move isn't saved before you confirm it); resigning drops it. *Take it back*
+     here isn't counted in `takebacks` (that counts the Undo button).
+   - With the option off, Stockfish is still only started by the first hint.
+   - e2e (real Stockfish + Maia): `4k3/8/4p3/8/8/8/8/3QK3 w`, Qd5?? is caught with the queen
+     circled; after taking it back, Qd2 goes straight through. ~3 s in CI-like conditions,
+     including Stockfish start-up.
+   - **Known limits, to tune by feel:** thresholds are guesses; the 1 s vs 0.3 s searches reach
+     different depths, so borderline moves can flicker either way. Draws by threefold repetition
+     aren't spotted (`assessMove` sees one FEN, not the history). After *Take it back* the hint
+     panel starts over (press Hint again). Pre-analysis shares Stockfish with hints, so a hint
+     asked for right after your turn starts may wait up to 1 s. Not measured on the Pixel 10 yet.
+3. **"Why not?": built** (draft PR #9, same branch). Done-when e2e passes (`e2e/whyNot.spec.ts`).
+   - `buildTeachingLine(…, { firstMove })` teaches a given move: Stockfish analyses the
+     position *after* it (MultiPV 1, same 1.2 s as the hint's first search, so depths are
+     comparable) and the score is turned round to the user's view (`unflip`, inverse of `flip`).
+   - `isClearlyWorse(hint, yours)`: ≥ 50 cp on capped (±1000) scores; when the hint mates, any
+     forced mate is as good; giving up a forced mate is always worse.
+   - `explainWhyNot` (narrator): your move and the likely reply (and what it takes), then one of
+     a forced mate against you / material lost over the line / a piece left to be taken, then
+     "<hint> was better: it's checkmate / forces checkmate in N / forks the king and the queen /
+     wins material worth about N pawns / Stockfish rates it about N pawns higher".
+   - `CoachingChecker` is now the game's only `MoveChecker`: "why not?" when a hint is shown for
+     this position and you played something else, otherwise the blunder check (if the option is
+     on). If building your line fails or takes > 10 s, the blunder check takes over. When
+     there's nothing to check it answers **synchronously**, and the session then skips the
+     "Checking your move…" state, so ordinary moves don't pause even for a frame.
+   - The session starts the check *before* announcing the move, because announcing it makes
+     the UI move the hint coach on, and the checker must read the hint first.
+   - `HintCoach.moveTo(position)` replaces the reset-on-every-move effect: the hint is hidden on
+     a new position and restored (same level, not recorded again) when the game returns to it,
+     so *Go back* shows the hint again.
+   - UI: "There was a better move." status, the steps as a list, the hint's move as an arrow,
+     *Go back* (primary) and *Continue*. Took ~1.8 s on the container for the fork position.
+   - Not counted in the record (like *Take it back* for the blunder warning).
+   - **Concrete reasons only (after Ben's phone check):** a hint saying "no tactic here" was
+     followed by "there was a better move" with only Stockfish's numbers as the reason. Now a
+     loss under 200 cp (the blunder threshold, `unexplainedLossCp`) only interrupts if
+     `whyNotReasons` finds a fact: your line allows mate, loses material or leaves a piece to
+     be taken, or the hint's move mates, forks or wins material. The narrator and the checker
+     share `whyNotReasons`, so the panel never shows a reason the decision didn't use.
+   - Tests: 196 unit, 11 e2e.
+   - **Open:** the 50 cp threshold is a guess. Should "why not?" also work when you didn't ask for a hint?
 
 ### Open questions for phase 2 (also in DESIGN §10)
 - Threshold for "teachable but slightly worse" moves.

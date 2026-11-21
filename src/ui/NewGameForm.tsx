@@ -1,22 +1,23 @@
 import { useState } from 'react';
-import { ELO_CHOICES, type ColorChoice } from './gameOptions';
+import { ELO_CHOICES, type ColorChoice, type GameChoice } from './gameOptions';
 
 type Props = {
   color: ColorChoice;
   elo: number;
   onColorChange: (c: ColorChoice) => void;
-  onStart: (choice: { color: ColorChoice; elo: number }) => void;
+  onStart: (choice: GameChoice) => void;
 };
 
 export function NewGameForm({ color, elo: initialElo, onColorChange, onStart }: Props) {
   const [elo, setElo] = useState(initialElo);
+  const [warnBlunders, setWarnBlunders] = useState(false);
   return (
     <form
       aria-label="New game"
       className="panel new-game"
       onSubmit={(e) => {
         e.preventDefault();
-        onStart({ color, elo });
+        onStart({ color, elo, warnBlunders });
       }}
     >
       <fieldset className="segmented">
@@ -41,6 +42,10 @@ export function NewGameForm({ color, elo: initialElo, onColorChange, onStart }: 
       <p className="hint">
         Maia uses Lichess ratings, which usually run a few hundred points above chess.com at this level.
       </p>
+      <label className="check-field">
+        <input type="checkbox" checked={warnBlunders} onChange={(e) => setWarnBlunders(e.target.checked)} />
+        Warn me before a blunder
+      </label>
       <button type="submit" className="primary">
         Start game
       </button>

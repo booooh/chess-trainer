@@ -1,9 +1,10 @@
 // The template narrator (DESIGN §5.1, §5.3): turns a teaching line and its facts into the text
 // of each hint level. Deterministic and offline, so a hint always appears; LLM narrators can
 // rephrase the same facts later (ADR-0004), but may not add to them.
+import type { Blunder } from './blunders';
 import { Board, materialBalance, otherColor, type Piece, type PieceType } from './board';
 import { hangingPieces, scoreToCp, type Fact } from './facts';
-import { Game, type Color, type Square } from './game';
+import { Game, type Color, type DrawReason, type Square } from './game';
 import type { TeachingLine, TeachingPly } from './teachingLine';
 
 export type HintText = {
@@ -37,6 +38,131 @@ export function narrate(line: TeachingLine, { fen, userColor }: { fen: string; u
     move: { from, to, text: `Play ${first.san}.` },
     explanation: explain(line, fen, userColor, engineAgrees),
   };
+}
+
+const DRAWS: Record<DrawReason, string> = {
+  stalemate: 'This is stalemate',
+  threefoldRepetition: 'This repeats the position a third time',
+  insufficientMaterial: 'This leaves too little material to checkmate',
+  fiftyMoves: 'This reaches the fifty-move rule',
+};
+
+/** The blunder warning's text: why the move the user is about to play is a mistake. */
+export function describeBlunder(b: Blunder): string {
+  switch (b.kind) {
+    case 'allowsMate':
+      return b.inMoves === 1
+        ? 'After this, your opponent can checkmate you in one move.'
+        : `After this, your opponent has a forced checkmate in ${b.inMoves} moves.`;
+    case 'missesMate':
+      return b.inMoves === 1
+        ? 'You can checkmate in one move, and this isn’t it.'
+        : `You have a forced checkmate in ${b.inMoves} moves, and this move lets it slip.`;
+    case 'draws':
+      return `${DRAWS[b.reason]}: the game ends in a draw, though you stand better.`;
+    case 'hangs':
+      return `This leaves your ${NAMES[b.piece.type]} on ${b.square} to be taken.`;
+    case 'loses': {
+      const pawns = Math.max(1, Math.round(b.lossCp / 100));
+      const worth = pawns === 1 ? 'a pawn’s' : `${pawns} pawns’`;
+      return `This loses about ${worth} worth compared with the best move.`;
+    }
+  }
+}
+
+/**
+ * The concrete reasons a "why not?" explanation can give, as typed facts (ADR-0004). Each is
+ * null when there's nothing specific to say; then only Stockfish's numbers are left.
+ */
+export type WhyNotReasons = {
+  /** What goes wrong after the user's move. */
+  yours:
+    | { kind: 'allowsMate' }
+    | { kind: 'losesMaterial'; cp: number }
+    | { kind: 'leavesHanging'; piece: Piece; square: Square }
+    | null;
+  /** What the hint's move does instead. */
+  better:
+    | { kind: 'checkmate' }
+    | { kind: 'forcesMate'; inMoves: number }
+    | { kind: 'fork'; targets: PieceType[] }
+    | { kind: 'winsMaterial'; cp: number }
+    | null;
+};
+
+/** Why the user's line (`yours`) is worse than the hint's, as far as the facts can say. */
+export function whyNotReasons(hint: TeachingLine, yours: TeachingLine, { fen, userColor }: { fen: string; userColor: Color }): WhyNotReasons {
+  const [mine, reply] = yours.plies;
+  let mistake: WhyNotReasons['yours'] = null;
+  const lost = -netMaterial(fen, yours.plies, userColor);
+  const leftHanging = find(mine!.facts, 'hanging');
+  if (yours.score.type === 'mate' && yours.score.value < 0) mistake = { kind: 'allowsMate' };
+  else if (lost >= 100 && scoreToCp(yours.score) <= -100) mistake = { kind: 'losesMaterial', cp: lost };
+  else if (leftHanging && leftHanging.piece.color === userColor && !capturedPiece(reply ?? mine!)) {
+    mistake = { kind: 'leavesHanging', piece: leftHanging.piece, square: leftHanging.square };
+  }
+
+  const first = hint.plies[0]!;
+  const fork = find(first.facts, 'fork');
+  const won = netMaterial(fen, hint.plies, userColor);
+  let better: WhyNotReasons['better'] = null;
+  if (first.san.endsWith('#')) better = { kind: 'checkmate' };
+  else if (hint.score.type === 'mate' && hint.score.value > 0) better = { kind: 'forcesMate', inMoves: hint.score.value };
+  else if (fork) {
+    const board = Board.fromFen(first.fenBefore);
+    better = { kind: 'fork', targets: fork.targets.map((sq) => board.get(sq)!.type) };
+  } else if (won >= 100 && scoreToCp(hint.score) >= WINNING_CP) better = { kind: 'winsMaterial', cp: won };
+  return { yours: mistake, better };
+}
+
+/**
+ * "Why not?" (DESIGN §5.4): why the move the user played (`yours`) is worse than the hint's
+ * (`hint`). Both lines start in `fen`. First what goes wrong after the user's move, then what
+ * the hint's move does instead. Deliberately short: the hint's own explanation has the rest.
+ */
+export function explainWhyNot(hint: TeachingLine, yours: TeachingLine, context: { fen: string; userColor: Color }): string[] {
+  const steps: string[] = [];
+  const [mine, reply] = yours.plies;
+  if (reply) {
+    const taken = capturedPiece(reply);
+    steps.push(`After ${mine!.san}, most players reply ${reply.san}${taken ? `, taking your ${NAMES[taken.type]}` : ''}.`);
+  } else if (mine!.san.endsWith('#')) {
+    steps.push(`${mine!.san} is checkmate too.`);
+  } else {
+    steps.push(`After ${mine!.san}, the game is over.`);
+  }
+
+  const reasons = whyNotReasons(hint, yours, context);
+  const mistake = reasons.yours;
+  if (mistake?.kind === 'allowsMate') steps.push('From there your opponent can force checkmate.');
+  else if (mistake?.kind === 'losesMaterial') steps.push(`Overall you lose material worth about ${pawns(mistake.cp)}.`);
+  else if (mistake?.kind === 'leavesHanging') steps.push(`Your ${NAMES[mistake.piece.type]} on ${mistake.square} is left to be taken.`);
+
+  steps.push(`${hint.plies[0]!.san} was better: ${whyBetter(reasons.better, hint, yours)}.`);
+  return steps;
+}
+
+function whyBetter(better: WhyNotReasons['better'], hint: TeachingLine, yours: TeachingLine): string {
+  switch (better?.kind) {
+    case 'checkmate':
+      return 'it’s checkmate';
+    case 'forcesMate':
+      return `it forces checkmate in ${better.inMoves} moves`;
+    case 'fork':
+      return `it forks ${list(better.targets.map((t) => `the ${NAMES[t]}`))}`;
+    case 'winsMaterial':
+      return `it wins material worth about ${pawns(better.cp)}`;
+    default: {
+      const diff = Math.min(1000, scoreToCp(hint.score)) - Math.max(-1000, scoreToCp(yours.score));
+      return diff < 100 ? 'Stockfish rates it a little higher' : `Stockfish rates it about ${pawns(diff)} higher`;
+    }
+  }
+}
+
+/** "a pawn", "3 pawns" (centipawns, rounded). */
+function pawns(cp: number): string {
+  const n = Math.max(1, Math.round(cp / 100));
+  return n === 1 ? 'a pawn' : `${n} pawns`;
 }
 
 function nudge(line: TeachingLine, fen: string, userColor: Color, engineAgrees: boolean): string {

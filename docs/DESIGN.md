@@ -194,20 +194,30 @@ which is what makes a small local model usable at all.
 Requested by Ben after trying phase 2 hints. In build order, since each needs the one before:
 
 1. **Undo.** Take back moves to choose a different one. Normally a pair (your move and Maia's
-   reply), so it's your turn again; repeat to go further back. `hintsUsed` entries for undone
-   plies are dropped. Open question: should a finished game's record show that moves were
-   taken back (e.g. a `takebacks` count), like hints might mark it "assisted"?
+   reply), so it's your turn again; repeat to go further back. While Maia is still thinking
+   (or failed to move), Undo takes back only your move and cancels her reply. `hintsUsed`
+   entries for undone plies are dropped. The record keeps a `takebacks` count (left out when
+   zero), so a later "assisted" flag or stats can use it without changing the format. Undo is
+   only offered while the game is on: a finished game's record is saved and never changes.
 2. **Blunder warning** (an option, off by default). When your move loses a lot compared with
    the best one (e.g. ≥ 200 cp, a missed or allowed mate, or a newly hanging piece from the
    facts extractor), ask before it's played: "This leaves your knight on d4 undefended. Play
    it anyway?" with *Play anyway* or *Take it back*. To keep it fast, analyse the position
    in the background while it's your turn, so only the position after your move needs a short
-   search (~0.3 s).
+   search (~0.3 s). Built: the move appears on the board and Maia's reply waits for the check.
+   The warning names the problem (a forced mate allowed or missed, a draw thrown away, the
+   piece left hanging, or "loses about N pawns"), but not the better move, which is the
+   hint's job. A check that fails or takes over 5 s never blocks the move.
 3. **"Why not?"** After a hint, you may play a different move. The app builds the teaching
    line for *your* move too (Maia's likely reply, then Stockfish), compares the two lines'
    facts and scores, and explains the difference: "After Nf3?, most players reply …Qxb5 and
    you lose the knight. Nc7+ wins the queen instead." Then you choose: **continue** with your
-   move, or **go back** (undo) and play the hint's move.
+   move, or **go back** (undo) and play the hint's move. Built: only for moves clearly worse
+   than the hint's (≥ half a pawn, or a forced mate let go), and below a blunder-sized loss
+   (2 pawns) only when there's a concrete reason to give (material, a piece left to be taken,
+   a mate, a fork), never on Stockfish's numbers alone; like the blunder warning, the
+   move is held back before Maia replies, and going back brings the hint back. When there's
+   a hint, "why not?" replaces the blunder warning for that move.
 
 ## 6. Openings
 
@@ -258,8 +268,8 @@ rebuilt from games.
 
 ```ts
 Game          { id: uuid, startedAt, userColor, opponent: {engine:"maia3", elo},
-                moves: uci[], pgn, result, hintsUsed: {ply, level}[], openingKey?,
-                schemaVersion }                                     // src/core/records.ts
+                startFen?, moves: uci[], pgn, result, hintsUsed: {ply, level}[],
+                takebacks?, openingKey?, schemaVersion }                                     // src/core/records.ts
 PositionStat  { positionKey, userColor, timesSeen, wins, draws, losses,
                 lastSeenAt, children: {uci, timesPlayed}[] }        // derived, rebuildable
 RepertoireLine{ id: uuid, userColor, moves: uci[], pinned: boolean, createdAt }
@@ -298,4 +308,5 @@ Current status and the detailed plan for the next phase: [`docs/STATUS.md`](STAT
 - ~~Maia-3's behaviour below 1100~~: answered by the phase 1 spike (`docs/spikes/maia-3.md`).
   It plays measurably weaker down to at least 400, so the 600–1000 range is possible in v1.
 - Exact hint threshold for "teachable but slightly worse" moves: tune from real games.
+- "Why not?" threshold (now 50 cp) and blunder thresholds (§5.4, now 200 cp): tune from real games.
 - Whether hints used should affect the game record or stats (e.g. mark the game "assisted").

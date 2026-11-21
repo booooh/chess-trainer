@@ -8,6 +8,38 @@ export interface Opponent {
   chooseMove(position: { fen: string; moves: readonly Uci[]; startFen?: string }, signal?: AbortSignal): Promise<Uci>;
 }
 
+/** The position the user moves in: its FEN, and the moves that led to it. */
+export type Position = { fen: string; moves: readonly Uci[] };
+
+/** Why a move is held back before it's final (DESIGN §5.4). */
+export type MoveWarning =
+  /** The blunder warning: one sentence; `square` marks a piece left to be taken. */
+  | { kind: 'blunder'; text: string; square?: Square }
+  /** "Why not?": the user played something other than the hint's move, and it's clearly worse. */
+  | { kind: 'whyNot'; steps: string[]; better: { from: Square; to: Square; san: string } };
+
+/**
+ * Looks at the user's moves before they're final (the blunder warning, DESIGN §5.4).
+ * Implemented by `BlunderChecker`; tests use fakes.
+ */
+export interface MoveChecker {
+  /** Called whenever it's the user's turn, so the position can be analysed ahead. */
+  prepare(fen: string): void;
+  /**
+   * A warning if playing `uci` in `position` deserves one, otherwise null. Should never
+   * reject. Called before the session announces the move, so a checker can still read
+   * state tied to the position (e.g. the hint shown there). Answering synchronously (no
+   * Promise) means there was nothing to check, and the move goes on without a pause.
+   */
+  check(position: Position, uci: Uci, signal: AbortSignal): MoveWarning | null | Promise<MoveWarning | null>;
+}
+
+/**
+ * The user's last move, waiting for the checker: being checked, or held back with a warning
+ * until they choose `playAnyway()` or `reconsider()`.
+ */
+export type MoveReview = { status: 'checking' } | { status: 'warning'; warning: MoveWarning };
+
 export type SessionState = {
   fen: string;
   turn: Color;
@@ -25,6 +57,10 @@ export type SessionState = {
   thinking: boolean;
   /** Set when the opponent failed to move; `retryOpponent()` tries again. */
   error: string | undefined;
+  /** True if `takeBack()` would do something: the game is on and the user has moved. */
+  canTakeBack: boolean;
+  /** Set while the user's last move is being checked or is held back with a warning. */
+  review: MoveReview | undefined;
 };
 
 export type SessionOptions = {
@@ -32,6 +68,8 @@ export type SessionOptions = {
   opponent: Opponent;
   /** Start from this position instead of the usual one (e.g. a practice position). */
   startFen?: string;
+  /** Checks the user's moves before the opponent replies (the blunder warning, if turned on). */
+  moveChecker?: MoveChecker;
   /** Called once when the game ends, with the record to store. */
   onFinished?: (record: GameRecord) => void | Promise<void>;
   now?: () => Date;
@@ -47,8 +85,15 @@ export class GameSession {
   /** Highest hint level used for each of the user's moves, by ply (index into the moves). */
   private readonly hints = new Map<number, HintLevel>();
   private readonly listeners = new Set<() => void>();
-  private readonly abort = new AbortController();
+  /** Cancels the opponent request in flight, if any (take-back, resign, dispose). */
+  private pending: AbortController | undefined;
   private readonly startedAt: Date;
+  /** Who moved first, which tells whose each ply is. */
+  private readonly firstToMove: Color;
+  private takebacks = 0;
+  private review: MoveReview | undefined;
+  /** Cancels the move check in flight, if any. */
+  private reviewAbort: AbortController | undefined;
   private thinking = false;
   private error: string | undefined;
   private finished = false;
@@ -56,6 +101,7 @@ export class GameSession {
 
   constructor(private readonly options: SessionOptions) {
     this.game = new Game(options.startFen);
+    this.firstToMove = this.game.turn;
     this.startedAt = (options.now ?? (() => new Date()))();
     this.snapshot = this.buildState();
   }
@@ -72,17 +118,61 @@ export class GameSession {
 
   /** Starts the game; if the opponent has white, waits for its first move. */
   async start(): Promise<void> {
+    this.prepareCheck();
     if (this.isOpponentsTurn()) await this.opponentMove();
   }
 
-  /** Plays the user's move, then waits for the opponent's reply. */
+  /**
+   * Plays the user's move, then waits for the opponent's reply. With a move checker, the
+   * move is checked first; a blunder is held back (resolving without a reply) until the
+   * user chooses `playAnyway()` or `reconsider()`.
+   */
   async playUserMove(uci: Uci): Promise<void> {
-    if (this.thinking || this.game.turn !== this.options.userColor) {
+    if (this.thinking || this.review || this.game.turn !== this.options.userColor) {
       throw new Error(`not your turn: ${uci}`);
     }
+    const before: Position = { fen: this.game.fen, moves: [...this.game.moves] };
     this.game.play(uci); // throws IllegalMoveError, leaving everything unchanged
+    const checker = this.options.moveChecker;
+    if (checker) {
+      const abort = new AbortController();
+      const checking = checker.check(before, uci, abort.signal); // before anyone hears of the move
+      let warning: MoveWarning | null;
+      if (checking instanceof Promise) {
+        this.reviewAbort = abort;
+        this.review = { status: 'checking' };
+        this.changed();
+        warning = await checking;
+        if (abort.signal.aborted) return; // resigned or disposed meanwhile
+        this.reviewAbort = undefined;
+      } else {
+        warning = checking;
+      }
+      if (warning) {
+        this.review = { status: 'warning', warning };
+        this.changed();
+        return;
+      }
+      this.review = undefined;
+    }
     this.changed();
     if (this.isOpponentsTurn()) await this.opponentMove();
+  }
+
+  /** Plays the move the checker warned about, then waits for the opponent's reply. */
+  async playAnyway(): Promise<void> {
+    if (this.review?.status !== 'warning') return;
+    this.review = undefined;
+    this.changed();
+    if (this.isOpponentsTurn()) await this.opponentMove();
+  }
+
+  /** Takes back the move the checker warned about, so the user can choose another. */
+  reconsider(): void {
+    if (this.review?.status !== 'warning') return;
+    this.review = undefined;
+    this.game.undo();
+    this.changed();
   }
 
   /** True if from → to is a pawn promotion, so the UI must ask which piece. */
@@ -105,18 +195,65 @@ export class GameSession {
     this.hints.set(ply, Math.max(level, this.hints.get(ply) ?? 0) as HintLevel);
   }
 
+  /**
+   * Takes back moves so it is the user's turn one move earlier: their last move and the
+   * opponent's reply, or only their move if the reply hasn't come (it is cancelled) or
+   * failed. Hints for those moves are forgotten. Does nothing once the game is over: by
+   * then the record is saved, and records never change.
+   */
+  takeBack(): void {
+    if (!this.canTakeBack()) return;
+    this.cancelPending();
+    this.thinking = false;
+    this.error = undefined;
+    do this.game.undo();
+    while (this.game.turn !== this.options.userColor);
+    for (const ply of this.hints.keys()) if (ply >= this.game.moves.length) this.hints.delete(ply);
+    this.takebacks++;
+    this.changed();
+  }
+
   resign(): void {
+    if (this.review) this.dropReview();
     if (this.game.isOver) return;
     this.game.resign(this.options.userColor);
-    this.abort.abort();
+    this.cancelPending();
     this.thinking = false;
     this.changed();
   }
 
   /** Stops listening for the opponent (e.g. the user left the game screen). */
   dispose(): void {
-    this.abort.abort();
+    this.cancelPending();
+    this.reviewAbort?.abort();
     this.listeners.clear();
+  }
+
+  /** Forgets the move under review, as if it was never played. */
+  private dropReview(): void {
+    this.reviewAbort?.abort();
+    this.reviewAbort = undefined;
+    this.review = undefined;
+    this.game.undo();
+  }
+
+  private prepareCheck(): void {
+    if (this.userCanMove()) this.options.moveChecker?.prepare(this.game.fen);
+  }
+
+  private userCanMove(): boolean {
+    return !this.thinking && !this.review && !this.game.isOver && this.game.turn === this.options.userColor;
+  }
+
+  private cancelPending(): void {
+    this.pending?.abort();
+    this.pending = undefined;
+  }
+
+  private canTakeBack(): boolean {
+    // The user's first move is ply 0 if they moved first, otherwise ply 1.
+    const firstUserPly = this.firstToMove === this.options.userColor ? 0 : 1;
+    return !this.review && !this.game.isOver && this.game.moves.length > firstUserPly;
   }
 
   private isOpponentsTurn(): boolean {
@@ -127,7 +264,9 @@ export class GameSession {
     this.thinking = true;
     this.error = undefined;
     this.changed();
-    const signal = this.abort.signal;
+    const request = new AbortController();
+    this.pending = request;
+    const signal = request.signal;
     try {
       const { startFen } = this.options;
       const position = { fen: this.game.fen, moves: this.game.moves, ...(startFen ? { startFen } : {}) };
@@ -139,6 +278,7 @@ export class GameSession {
       this.error = err instanceof Error ? err.message : String(err);
     } finally {
       if (!signal.aborted) {
+        this.pending = undefined;
         this.thinking = false;
         this.changed();
       }
@@ -147,16 +287,17 @@ export class GameSession {
 
   private changed(): void {
     this.snapshot = this.buildState();
-    if (this.game.isOver && !this.finished) {
+    // A move under review isn't final yet, even if it would end the game.
+    if (this.game.isOver && !this.finished && !this.review) {
       this.finished = true;
       void this.options.onFinished?.(this.record());
     }
+    this.prepareCheck();
     for (const l of this.listeners) l();
   }
 
   private buildState(): SessionState {
     const g = this.game;
-    const userCanMove = !this.thinking && !g.isOver && g.turn === this.options.userColor;
     return {
       fen: g.fen,
       turn: g.turn,
@@ -165,11 +306,13 @@ export class GameSession {
       san: [...g.sanMoves],
       lastMove: g.lastMove,
       inCheck: g.inCheck,
-      dests: userCanMove ? g.legalDestinations() : new Map(),
+      dests: this.userCanMove() ? g.legalDestinations() : new Map(),
       status: g.status,
       result: g.result,
       thinking: this.thinking,
       error: this.error,
+      canTakeBack: this.canTakeBack(),
+      review: this.review,
     };
   }
 
@@ -193,6 +336,7 @@ export class GameSession {
       result: this.game.result,
       hintsUsed: [...this.hints].sort(([a], [b]) => a - b).map(([ply, level]) => ({ ply, level })),
       ...(this.options.startFen ? { startFen: this.options.startFen } : {}),
+      ...(this.takebacks > 0 ? { takebacks: this.takebacks } : {}),
       schemaVersion: 1,
     };
   }
