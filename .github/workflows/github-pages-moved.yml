@@ -1,0 +1,48 @@
+name: Replace GitHub Pages site with a "moved" page
+
+# Run by hand, once, after production on Cloudflare Pages works (ADR-0009). It replaces the
+# old app at booooh.github.io/chess-trainer with legacy/github-pages/: a page linking to the
+# new address, plus a service worker that removes the old app from phones that installed it.
+# Turn GitHub Pages off in Settings → Pages once nobody needs the link, then delete this file.
+on:
+  workflow_dispatch:
+    inputs:
+      new_url:
+        description: 'New address of the app, e.g. https://chess-trainer.pages.dev/'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5
+      - name: Fill in the new address
+        env:
+          NEW_URL: ${{ inputs.new_url }}
+        run: |
+          # Only plain https URLs, so the value can't break out of the HTML or the sed below.
+          if [[ ! "$NEW_URL" =~ ^https://[A-Za-z0-9.-]+(/[A-Za-z0-9._~/-]*)?$ ]]; then
+            echo "::error::new_url must be a plain https:// URL"
+            exit 1
+          fi
+          sed -i "s|__NEW_URL__|$NEW_URL|g" legacy/github-pages/index.html
+          grep -c "$NEW_URL" legacy/github-pages/index.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: legacy/github-pages
+      - id: deployment
+        uses: actions/deploy-pages@v4
