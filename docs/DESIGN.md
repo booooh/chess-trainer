@@ -213,7 +213,9 @@ Requested by Ben after trying phase 2 hints. In build order, since each needs th
    facts and scores, and explains the difference: "After Nf3?, most players reply …Qxb5 and
    you lose the knight. Nc7+ wins the queen instead." Then you choose: **continue** with your
    move, or **go back** (undo) and play the hint's move. Built: only for moves clearly worse
-   than the hint's (≥ half a pawn, or a forced mate let go); like the blunder warning, the
+   than the hint's (≥ half a pawn, or a forced mate let go), and below a blunder-sized loss
+   (2 pawns) only when there's a concrete reason to give (material, a piece left to be taken,
+   a mate, a fork), never on Stockfish's numbers alone; like the blunder warning, the
    move is held back before Maia replies, and going back brings the hint back. When there's
    a hint, "why not?" replaces the blunder warning for that move.
 

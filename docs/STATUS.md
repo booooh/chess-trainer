@@ -30,7 +30,8 @@ https://booooh.github.io/chess-trainer/, now shows a "moved" page.
 - **Hints** (phase 2): on your turn, Hint shows a nudge; More help reveals the piece (circled), the move
   (arrow), then the line explained step by step. The highest level per move goes in `hintsUsed`.
 - **"Why not?"** (phase 2b, always on): after a hint, a different move that's clearly worse (≥ half
-  a pawn, or a forced mate let go) is held back. The panel explains what goes wrong after your
+  a pawn, or a forced mate let go) is held back, but only if there's a concrete reason to give
+  (material, a piece left to be taken, a mate, a fork) or it loses ≥ 2 pawns. The panel explains what goes wrong after your
   move and why the hint's move is better (shown as an arrow), with *Go back* (the hint comes
   back) or *Continue*.
 - **Blunder warning** (phase 2b, "Warn me before a blunder" on the new-game form, off by default):
@@ -79,7 +80,7 @@ e2e/           Playwright on an emulated Pixel 7 against the production build (r
 spikes/maia/   strength.ts: re-runnable Maia strength-by-rating measurement (Node + Stockfish)
 ```
 
-Tests: 194 unit (Vitest; two use real Stockfish in Node) and 11 e2e (Playwright). CI is `.github/workflows/ci.yml`, with jobs
+Tests: 196 unit (Vitest; two use real Stockfish in Node) and 11 e2e (Playwright). CI is `.github/workflows/ci.yml`, with jobs
 `check` → `e2e` → `deploy` (`main` only).
 
 ## Phase 2 plan: Hints
@@ -292,6 +293,13 @@ Requested by Ben after using phase 2 hints. Build in this order, test-first as u
    - UI: "There was a better move." status, the steps as a list, the hint's move as an arrow,
      *Go back* (primary) and *Continue*. Took ~1.8 s on the container for the fork position.
    - Not counted in the record (like *Take it back* for the blunder warning).
+   - **Concrete reasons only (after Ben's phone check):** a hint saying "no tactic here" was
+     followed by "there was a better move" with only Stockfish's numbers as the reason. Now a
+     loss under 200 cp (the blunder threshold, `unexplainedLossCp`) only interrupts if
+     `whyNotReasons` finds a fact: your line allows mate, loses material or leaves a piece to
+     be taken, or the hint's move mates, forks or wins material. The narrator and the checker
+     share `whyNotReasons`, so the panel never shows a reason the decision didn't use.
+   - Tests: 196 unit, 11 e2e.
    - **Open:** the 50 cp threshold is a guess. Should "why not?" also work when you didn't ask for a hint?
 
 ### Open questions for phase 2 (also in DESIGN §10)
