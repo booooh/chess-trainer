@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StockfishClient, stockfishWorkerUrl, type UciWorkerLike } from './stockfishClient';
 
 /** Stands in for the Stockfish worker: records commands, and replies when told to. */
@@ -188,6 +188,38 @@ describe('StockfishClient', () => {
     await expect(result).rejects.toThrow('failed to fetch wasm');
     await expect(client.ready).rejects.toThrow('failed to fetch wasm');
     await expect(client.analyse(FEN_A, options)).rejects.toThrow('failed to fetch wasm');
+  });
+
+  describe('when the engine never starts', () => {
+    afterEach(() => vi.useRealTimers());
+
+    // A missing or broken .wasm doesn't raise an error event: stockfish.js just never says
+    // uciok. Without a timeout, a hint would wait forever.
+    it('gives up after the start-up timeout and rejects everything', async () => {
+      vi.useFakeTimers();
+      const engine = new FakeStockfish();
+      const client = new StockfishClient(engine, { startTimeoutMs: 20_000 });
+      const result = client.analyse(FEN_A, options);
+      const failed = expect(result).rejects.toThrow(/didn't start/);
+      await vi.advanceTimersByTimeAsync(19_999);
+      engine.say('info string still loading');
+      await vi.advanceTimersByTimeAsync(1);
+      await failed;
+      await expect(client.ready).rejects.toThrow(/didn't start/);
+      expect(engine.terminated).toBe(true);
+    });
+
+    it('does not time out once the engine has started', async () => {
+      vi.useFakeTimers();
+      const engine = new FakeStockfish();
+      const client = new StockfishClient(engine, { startTimeoutMs: 20_000 });
+      engine.say('uciok');
+      await vi.advanceTimersByTimeAsync(60_000);
+      const result = client.analyse(FEN_B, options);
+      await vi.advanceTimersByTimeAsync(0);
+      engine.say('info depth 10 multipv 1 score mate 1 nodes 1 time 1 pv d1d8', 'bestmove d1d8');
+      expect(await result).toHaveLength(1);
+    });
   });
 
   it('terminates the worker and rejects pending searches when disposed', async () => {

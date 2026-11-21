@@ -52,8 +52,18 @@ export class StockfishClient implements Engine {
   private multiPv: number | null = null;
   private markReady!: () => void;
   private failReady!: (e: Error) => void;
+  private startTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(private readonly worker: UciWorkerLike) {
+  /**
+   * @param options.startTimeoutMs How long to wait for the engine to start. A missing or
+   *   broken .wasm raises no error event (stockfish.js just never answers), so without this
+   *   a hint would wait forever. Generous by default: on a slow connection the first start
+   *   includes a 1.2 MB (compressed) download.
+   */
+  constructor(
+    private readonly worker: UciWorkerLike,
+    { startTimeoutMs = 30_000 }: { startTimeoutMs?: number } = {},
+  ) {
     this.ready = new Promise((resolve, reject) => {
       this.markReady = resolve;
       this.failReady = reject;
@@ -67,6 +77,10 @@ export class StockfishClient implements Engine {
     });
     worker.addEventListener('error', (e) => this.failAll(new Error(e.message || 'Stockfish worker crashed')));
     worker.postMessage('uci');
+    this.startTimer = setTimeout(() => {
+      worker.terminate();
+      this.failAll(new Error(`Stockfish didn't start within ${Math.round(startTimeoutMs / 1000)} s`));
+    }, startTimeoutMs);
   }
 
   analyse(fen: string, options: AnalyseOptions, signal?: AbortSignal): Promise<Line[]> {
@@ -127,6 +141,7 @@ export class StockfishClient implements Engine {
   private onLine(line: string): void {
     if (!this.isReady) {
       if (line.trim() === 'uciok') {
+        this.clearStartTimer();
         this.isReady = true;
         this.markReady();
         this.startNext();
@@ -146,7 +161,13 @@ export class StockfishClient implements Engine {
     this.startNext();
   }
 
+  private clearStartTimer(): void {
+    if (this.startTimer !== null) clearTimeout(this.startTimer);
+    this.startTimer = null;
+  }
+
   private failAll(error: Error): void {
+    this.clearStartTimer();
     this.failure ??= error;
     this.failReady(error);
     const jobs = [...(this.running ? [this.running] : []), ...this.queue];
