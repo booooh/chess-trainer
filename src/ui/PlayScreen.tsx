@@ -13,6 +13,7 @@ const PROMOTION_PIECES = [
 
 function statusText(s: SessionState): string {
   const you = s.userColor;
+  if (s.review) return s.review.status === 'checking' ? 'Checking your move…' : 'Are you sure?';
   switch (s.status.kind) {
     case 'playing':
       return s.thinking ? 'Maia is thinking…' : 'Your move';
@@ -64,9 +65,16 @@ export function PlayScreen({ session, hints, elo, onNewGame }: Props) {
   const hint = useSyncExternalStore(hints.subscribe, () => hints.state);
   const [promotion, setPromotion] = useState<[Square, Square] | null>(null);
   const [confirmResign, setConfirmResign] = useState(false);
-  const over = s.status.kind !== 'playing';
-  const yourTurn = !over && !s.thinking && s.turn === s.userColor;
-  const shapes = useMemo(() => hintShapes(hint), [hint]);
+  // A move under review may end the game, but isn't final until the user confirms it.
+  const over = s.status.kind !== 'playing' && !s.review;
+  const yourTurn = !over && !s.thinking && !s.review && s.turn === s.userColor;
+  const warning = s.review?.status === 'warning' ? s.review.warning : undefined;
+  const hintShapesNow = useMemo(() => hintShapes(hint), [hint]);
+  const warningShapes = useMemo<BoardShape[]>(
+    () => (warning?.square ? [{ orig: warning.square, brush: 'red' }] : []),
+    [warning],
+  );
+  const shapes = warning ? warningShapes : yourTurn ? hintShapesNow : undefined;
   const hintLabel = yourTurn ? hintButtonLabel(hint) : null;
 
   // A hint belongs to one position: hide it as soon as a move is made.
@@ -90,7 +98,7 @@ export function PlayScreen({ session, hints, elo, onNewGame }: Props) {
         dests={promotion ? new Map() : s.dests}
         userColor={s.userColor}
         onMove={onMove}
-        shapes={yourTurn ? shapes : undefined}
+        shapes={shapes}
       />
       <section className="panel play" aria-label="Game">
         <p className="opponent">
@@ -98,7 +106,7 @@ export function PlayScreen({ session, hints, elo, onNewGame }: Props) {
         </p>
         <p className="status" role="status">
           {s.error ? `Maia couldn't move: ${s.error}` : statusText(s)}
-          {s.inCheck && !over && !s.thinking && <strong className="check"> Check!</strong>}
+          {s.inCheck && !over && !s.thinking && !s.review && <strong className="check"> Check!</strong>}
         </p>
 
         {promotion && (
@@ -116,6 +124,20 @@ export function PlayScreen({ session, hints, elo, onNewGame }: Props) {
               </button>
             ))}
           </div>
+        )}
+
+        {warning && (
+          <section className="warning-panel" role="alertdialog" aria-label="Are you sure?">
+            <p>{warning.text}</p>
+            <div className="actions">
+              <button type="button" className="primary" onClick={() => session.reconsider()}>
+                Take it back
+              </button>
+              <button type="button" onClick={() => void session.playAnyway()}>
+                Play anyway
+              </button>
+            </div>
+          </section>
         )}
 
         {yourTurn && (hint.status === 'shown' || hint.status === 'failed') && (

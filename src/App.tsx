@@ -1,16 +1,17 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
+import { BlunderChecker } from './core/blunders';
 import type { Color } from './core/game';
 import { HintCoach } from './core/hints';
 import { MaiaOpponent } from './core/opponent';
 import { GameSession } from './core/session';
 import { Board } from './ui/Board';
-import { DEFAULT_ELO, type ColorChoice } from './ui/gameOptions';
+import { DEFAULT_ELO, type ColorChoice, type GameChoice } from './ui/gameOptions';
 import { NewGameForm } from './ui/NewGameForm';
 import { PlayScreen } from './ui/PlayScreen';
 import type { AppServices } from './ui/services';
 import './App.css';
 
-type Playing = { session: GameSession; hints: HintCoach; elo: number };
+type Playing = { session: GameSession; hints: HintCoach; checker: BlunderChecker | undefined; elo: number };
 
 type AppProps = {
   services: AppServices;
@@ -29,16 +30,20 @@ export default function App({ services, startFen }: AppProps) {
     () => () => {
       playing?.session.dispose();
       playing?.hints.dispose();
+      playing?.checker?.dispose();
     },
     [playing],
   );
 
-  const start = (choice: { color: ColorChoice; elo: number }) => {
+  const start = (choice: GameChoice) => {
     const userColor: Color = choice.color === 'random' ? (services.random() < 0.5 ? 'white' : 'black') : choice.color;
+    // Only start Stockfish for the blunder warning if it was asked for.
+    const checker = choice.warnBlunders ? new BlunderChecker(services.engine) : undefined;
     const session = new GameSession({
       userColor,
       opponent: new MaiaOpponent(services.predictor, { elo: choice.elo, random: services.random }),
       startFen,
+      ...(checker ? { moveChecker: checker } : {}),
       onFinished: (record) => services.repository.save(record).catch((err) => console.error('Saving the game failed', err)),
     });
     const hints = new HintCoach(
@@ -47,7 +52,7 @@ export default function App({ services, startFen }: AppProps) {
       { userColor, userElo: choice.elo, opponentElo: choice.elo, startFen, onLevel: (level) => session.noteHint(level) },
     );
     setElo(choice.elo);
-    setPlaying({ session, hints, elo: choice.elo });
+    setPlaying({ session, hints, checker, elo: choice.elo });
     void session.start();
   };
 
