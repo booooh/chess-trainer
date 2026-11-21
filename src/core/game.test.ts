@@ -88,4 +88,34 @@ describe('Game', () => {
     game.resign('white');
     expect(game.pgn()).toMatch(/1\. e4 e5 0-1$/);
   });
+
+  it('takes back the last move, restoring the position and the move list', () => {
+    const game = new Game();
+    play(game, 'e2e4', 'e7e5');
+    expect(game.undo()).toBe('e7e5');
+    expect(game.fen).toBe('rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1');
+    expect(game.moves).toEqual(['e2e4']);
+    expect(game.sanMoves).toEqual(['e4']);
+    expect(game.lastMove).toEqual(['e2', 'e4']);
+  });
+
+  it('has nothing to take back at the start, even from a given position', () => {
+    expect(new Game().undo()).toBeUndefined();
+    const fen = '4k3/8/8/8/8/8/8/4K2R w K - 0 1';
+    const game = new Game(fen);
+    expect(game.undo()).toBeUndefined();
+    game.play('e1g1');
+    game.undo();
+    expect(game.fen).toBe(fen);
+  });
+
+  it('can take back a checkmate, but not a resignation', () => {
+    const game = new Game();
+    play(game, 'f2f3', 'e7e5', 'g2g4', 'd8h4');
+    expect(game.undo()).toBe('d8h4');
+    expect(game.status).toEqual({ kind: 'playing' });
+    game.resign('white');
+    expect(game.undo()).toBeUndefined();
+    expect(game.moves).toHaveLength(3);
+  });
 });

@@ -126,6 +126,16 @@ export class Game {
     return { uci, san };
   }
 
+  /**
+   * Takes back the last move and returns it, or undefined if there is none. A resignation
+   * is final, so nothing can be taken back after one; a checkmate or draw can.
+   */
+  undo(): Uci | undefined {
+    if (this.resignedBy || this.played.length === 0) return undefined;
+    this.chess.undo();
+    return this.played.pop();
+  }
+
   resign(color: Color): void {
     if (this.isOver) return;
     this.resignedBy = color;
