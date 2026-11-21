@@ -419,6 +419,24 @@ describe('GameSession: blunder warning', () => {
     expect(records[0]!.moves).toEqual([]);
   });
 
+  it('goes straight on, without a "checking" pause, when the checker answers at once', async () => {
+    const { opponent } = scriptedOpponent('e7e5');
+    const seen: (string | undefined)[] = [];
+    const checker: MoveChecker = { prepare: () => {}, check: () => null };
+    const session = new GameSession({ userColor: 'white', opponent, moveChecker: checker });
+    session.subscribe(() => seen.push(session.state.review?.status));
+    void session.playUserMove('e2e4');
+    expect(session.state).toMatchObject({ review: undefined, thinking: true });
+    expect(seen).not.toContain('checking');
+  });
+
+  it('holds a move back at once when the checker warns at once', async () => {
+    const checker: MoveChecker = { prepare: () => {}, check: () => ({ kind: 'blunder', text: 'No!' }) };
+    const session = new GameSession({ userColor: 'white', opponent: scriptedOpponent().opponent, moveChecker: checker });
+    await session.playUserMove('f2f3');
+    expect(session.state.review).toEqual({ status: 'warning', warning: { kind: 'blunder', text: 'No!' } });
+  });
+
   it('ignores the warning buttons when there is no warning', async () => {
     const { checker } = fakeChecker({});
     const session = new GameSession({ userColor: 'white', opponent: scriptedOpponent().opponent, moveChecker: checker });

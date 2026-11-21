@@ -28,9 +28,10 @@ export interface MoveChecker {
   /**
    * A warning if playing `uci` in `position` deserves one, otherwise null. Should never
    * reject. Called before the session announces the move, so a checker can still read
-   * state tied to the position (e.g. the hint shown there).
+   * state tied to the position (e.g. the hint shown there). Answering synchronously (no
+   * Promise) means there was nothing to check, and the move goes on without a pause.
    */
-  check(position: Position, uci: Uci, signal: AbortSignal): Promise<MoveWarning | null>;
+  check(position: Position, uci: Uci, signal: AbortSignal): MoveWarning | null | Promise<MoveWarning | null>;
 }
 
 /**
@@ -135,13 +136,18 @@ export class GameSession {
     const checker = this.options.moveChecker;
     if (checker) {
       const abort = new AbortController();
-      this.reviewAbort = abort;
-      this.review = { status: 'checking' };
       const checking = checker.check(before, uci, abort.signal); // before anyone hears of the move
-      this.changed();
-      const warning = await checking;
-      if (abort.signal.aborted) return; // resigned or disposed meanwhile
-      this.reviewAbort = undefined;
+      let warning: MoveWarning | null;
+      if (checking instanceof Promise) {
+        this.reviewAbort = abort;
+        this.review = { status: 'checking' };
+        this.changed();
+        warning = await checking;
+        if (abort.signal.aborted) return; // resigned or disposed meanwhile
+        this.reviewAbort = undefined;
+      } else {
+        warning = checking;
+      }
       if (warning) {
         this.review = { status: 'warning', warning };
         this.changed();
