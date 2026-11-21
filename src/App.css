@@ -201,3 +201,26 @@ select:focus-visible,
   max-height: 6.5rem;
   overflow-y: auto;
 }
+
+/* Hints: the panel sits above the move list; the explanation is a numbered list of steps. */
+.hint-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.6rem 0.75rem;
+  border-left: 3px solid #7fa650;
+  border-radius: 4px;
+  background: rgba(127, 166, 80, 0.12);
+}
+
+.hint-panel p {
+  margin: 0;
+}
+
+.explanation {
+  margin: 0.25rem 0 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}

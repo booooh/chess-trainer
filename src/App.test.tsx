@@ -2,7 +2,8 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import App from './App';
-import type { Engine } from './core/engine';
+import type { Engine, Line } from './core/engine';
+import { Game } from './core/game';
 import type { HumanMovePredictor } from './core/opponent';
 import type { GameRecord, GameRepository } from './core/records';
 import { ModelStatusStore, type AppServices } from './ui/services';
@@ -100,5 +101,78 @@ describe('App', () => {
     fail = false;
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('Your move')).toBeInTheDocument();
+  });
+
+  describe('hints', () => {
+    // Nc7+ forks the king on e8 and the queen on a6.
+    const FORK = '4k3/7p/q7/1N6/8/8/7P/4K3 w - - 0 1';
+    const afterMoves = (...moves: string[]) => {
+      const g = new Game(FORK);
+      for (const m of moves) g.play(m);
+      return g.fen;
+    };
+    const line = (value: number, ...pv: string[]): Line => ({ move: pv[0]!, score: { type: 'cp', value }, pv, depth: 12 });
+    const engine: Engine = {
+      analyse: async (fen) =>
+        new Map<string, Line[]>([
+          [FORK, [line(650, 'b5c7', 'e8d7', 'c7a6')]],
+          [afterMoves('b5c7', 'e8d7'), [line(700, 'c7a6', 'd7c6')]],
+        ]).get(fen) ?? [],
+    };
+    const predictor: HumanMovePredictor = {
+      predict: async ({ fen }) => new Map([[fen === afterMoves('b5c7') ? 'e8d7' : 'd7c6', 1]]),
+    };
+
+    it('each press reveals one more level, and the game records the highest', async () => {
+      const user = userEvent.setup();
+      const { services, saved } = fakeServices({ engine, predictor });
+      render(<App services={services} startFen={FORK} />);
+      await user.click(screen.getByRole('button', { name: 'Start game' }));
+      await screen.findByText('Your move');
+
+      await user.click(screen.getByRole('button', { name: 'Hint' }));
+      const hint = await screen.findByRole('region', { name: 'Hint' });
+      expect(await within(hint).findByText('There’s a fork here.')).toBeInTheDocument();
+      expect(within(hint).queryByText(/knight on b5/)).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'More help' }));
+      expect(within(hint).getByText('Look at your knight on b5.')).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'More help' }));
+      expect(within(hint).getByText('Play Nc7+.')).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'More help' }));
+      const steps = within(hint).getByRole('list', { name: 'Explanation' });
+      expect(steps).toHaveTextContent('Nc7+ is a fork: the knight attacks the king and the queen at the same time.');
+      expect(screen.queryByRole('button', { name: 'More help' })).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Resign' }));
+      await user.click(screen.getByRole('button', { name: 'Confirm resign' }));
+      await waitFor(() => expect(saved[0]?.hintsUsed).toEqual([{ ply: 0, level: 4 }]));
+      expect(saved[0]!.startFen).toBe(FORK);
+      expect(screen.queryByRole('button', { name: 'Hint' })).not.toBeInTheDocument(); // game over
+    });
+
+    it('shows that it is thinking, then explains a failure and lets you try again', async () => {
+      const user = userEvent.setup();
+      let fail = true;
+      let finish: () => void = () => {};
+      const flaky: Engine = {
+        analyse: (fen, options, signal) =>
+          fail
+            ? new Promise((_, reject) => (finish = () => reject(new Error('Stockfish didn’t start within 30 s'))))
+            : engine.analyse(fen, options, signal),
+      };
+      render(<App services={fakeServices({ engine: flaky, predictor }).services} startFen={FORK} />);
+      await user.click(screen.getByRole('button', { name: 'Start game' }));
+      await screen.findByText('Your move');
+
+      await user.click(screen.getByRole('button', { name: 'Hint' }));
+      expect(screen.getByRole('button', { name: 'Thinking…' })).toBeDisabled();
+      act(() => finish());
+      expect(await screen.findByText('Couldn’t get a hint: Stockfish didn’t start within 30 s')).toBeInTheDocument();
+
+      fail = false;
+      await user.click(screen.getByRole('button', { name: 'Hint' }));
+      expect(await screen.findByText('There’s a fork here.')).toBeInTheDocument();
+    });
   });
 });
