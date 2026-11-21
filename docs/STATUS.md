@@ -1,6 +1,6 @@
 # Project status and handoff
 
-Last updated: 2026-11-21, phase 2 step 1 done (PRs #6, #7), step 2 (Stockfish worker) in review.
+Last updated: 2026-11-21, phase 2 steps 1 done (PRs #6, #7); steps 2–4 on draft PR #8; step 5 next.
 Read this first when picking the project up in a new session, then `DESIGN.md` and the ADRs.
 
 ## Where things stand
@@ -9,7 +9,7 @@ Read this first when picking the project up in a new session, then `DESIGN.md` a
 |---|---|---|
 | 0. Skeleton | ✅ Done (PR #2) | Installs on the phone; CI runs on every PR |
 | 1. Play | ✅ Done (PRs #3, #4, #5) | Ben played a full game against Maia 1100 on a Pixel 10 |
-| 2. Hints | 🚧 **In progress** | Step 1 (Cloudflare Pages) ✅. Step 2 (Stockfish worker) in review. Plan below |
+| 2. Hints | 🚧 **In progress** | Step 1 ✅. Steps 2–4 (engine, facts, teaching line) on draft PR #8. Step 5 (UI) next |
 | 3–6, v1.x, v2 | Not started | See `DESIGN.md` §9 |
 
 **Live app:** https://chess-trainer-dri.pages.dev (Cloudflare Pages, ADR-0009). It deploys from `main`
@@ -46,10 +46,14 @@ src/core/      Pure TS, no React (lint-enforced)
   records.ts     GameRecord type + GameRepository interface
   engine.ts      Engine interface (analyse → Line[]), Score/Line types, lazyEngine
   uci.ts         Parses Stockfish's UCI output (info/bestmove) into Lines
+  board.ts       Tactics board: attack maps (x-rays via "gone" squares), SEE, material
+  facts.ts       Facts extractor: moveFacts (material, fork, newly hanging, eval swing), hangingPieces
+  teachingLine.ts buildTeachingLine: Stockfish for the user, Maia for the opponent, best-defence branch
 src/workers/   maia.worker.ts (Maia-3 via onnxruntime-web), maiaClient.ts (request ids, abort,
                crash handling), maiaProtocol.ts (message types), download.ts (progress),
                stockfishClient.ts (queue, stop/abort, start-up timeout; stockfish.js itself is
-               the worker and speaks raw UCI, so there's no protocol file or worker file)
+               the worker and speaks raw UCI, so there's no protocol file or worker file),
+               nodeStockfish.testutil.ts (real Stockfish in Node for tests)
 src/storage/   gameRepository.ts: Dexie implementation (add-only: games are immutable)
 src/ui/        Board (chessground wrapper), NewGameForm, PlayScreen, services (dependency
                injection: real ones in browserServices.ts, fakes in tests), gameOptions
@@ -57,7 +61,7 @@ e2e/           Playwright on an emulated Pixel 7 against the production build (r
 spikes/maia/   strength.ts: re-runnable Maia strength-by-rating measurement (Node + Stockfish)
 ```
 
-Tests: 72 unit (Vitest, including one against real Stockfish in Node) and 6 e2e (Playwright). CI is `.github/workflows/ci.yml`, with jobs
+Tests: 108 unit (Vitest; two use real Stockfish in Node) and 6 e2e (Playwright). CI is `.github/workflows/ci.yml`, with jobs
 `check` → `e2e` → `deploy` (`main` only).
 
 ## Phase 2 plan: Hints
@@ -97,7 +101,7 @@ Gives every later phase 2 PR a preview link you can open on the phone before mer
 `github-pages-moved.yml`, `legacy/` and the `github-pages` environment.
 
 ### Step 2: Stockfish engine worker (DESIGN §4.1, ADR-0002)
-**Done (branch `phase-2-stockfish-engine`):**
+**Done (draft PR #8, branch `phase-2-stockfish-engine`):**
 - `stockfish` 19.0.1 is a dependency (pinned). The app uses the **lite single-threaded** build:
   `stockfish-19-lite-single.js` (28 KB) + `.wasm` (1.8 MB, 1.2 MB compressed). GPL-3.0, compatible with
   our AGPL (ADR-0008).
@@ -130,17 +134,45 @@ production after one visit), but the browser may evict it under storage pressure
 `runtimeCaching` CacheFirst rule for `/assets/*.wasm` would make it as durable as the Maia model.
 
 ### Step 3: Facts extractor (DESIGN §5.3, ADR-0004)
-Pure TS in `src/core/`, unit-tested on hand-picked FENs. Start with what the done-when needs:
-**fork** (one piece attacking two or more valuable targets, with check counting), **hanging piece**
-(static exchange evaluation: cheapest captures first), material change, and eval swing. Add pins,
-skewers, mate threats and opening principles afterwards.
+**Done (draft PR #8):**
+- `board.ts`: own attack maps rather than chess.js, because an exchange needs "who attacks this
+  square once these pieces are gone" (x-rays). `see()` = static exchange evaluation: cheapest
+  capture first, either side may stop, a king only captures on an undefended square. Pins and en
+  passant are ignored (the usual SEE simplification).
+- `facts.ts`, `moveFacts(fen, uci, evals?)` returns, in order:
+  - `materialChange` for the mover (captures, promotions);
+  - `fork` by the moved piece: ≥2 targets, each the king or a non-pawn piece it would win
+    material by taking; not a fork if the forker can itself be won (e.g. a check the queen takes);
+  - `hanging` pieces the move newly leaves winnable, either side's (SEE gain > 0);
+  - `evalSwing` from the mover's point of view, only if it changes by ≥100 cp (configurable).
+- `hangingPieces(fen)` for a whole position (for the level-1 nudge "your knight is hanging").
+- Mate scores map to ±10000 minus the distance to mate (`scoreToCp`).
+- Not yet: pins, skewers, mate threats, opening principles.
+
+**Lesson for the narrator:** facts are about the *position*, not the outcome. In
+`r3k3/7p/8/1N6/…` Nc7+ is a real fork, but after Nxa8 the knight is trapped in the corner and
+Stockfish says the position is equal. Teaching lines only pick moves Stockfish rates near the
+best, which guards against most of this; the narrator should still only say "wins material"
+when the eval agrees.
 
 ### Step 4: Teaching line (DESIGN §5.2)
-- Your move: among the MultiPV candidates within about 30 cp of the best, prefer the teachable one.
-- Opponent's reply: Maia's most likely move at the opponent's rating. The `HumanMovePredictor`
-  already returns full probabilities.
-- Branch when Maia's reply differs from Stockfish's best defence.
-- 3–5 plies, extended to 7 only while captures or checks are pending.
+**Done (draft PR #8)**, `buildTeachingLine(request, { engine, predictor }, options, signal)`:
+- **Your move:** Stockfish candidates (MultiPV 3, 1.2 s) within 30 cp of the best; a mate is only
+  "equal" to other mates. Prefer a motif (fork or material won), then the move Maia gives the
+  highest probability at the *user's* rating, then Stockfish's order.
+- **Opponent replies:** Maia's most likely move at the opponent's rating. If the first reply
+  isn't Stockfish's best defence, `bestDefence` holds Stockfish's own line from that reply on
+  (no extra engine time).
+- **Your later moves:** Stockfish best move, 0.4 s each. A typical hint costs ~1.6–2 s of
+  engine time; all timings are options.
+- **Length:** ≥3 plies, then stop at the first ply that is neither capture nor check; cap 7;
+  stop if the game ends.
+- Each ply carries its facts; an opponent reply that loses ground gets an `evalSwing`.
+- Integration test with real Stockfish: the queen fork Nc7+ is taught, then Nxa6.
+- **Test gotcha:** the Node build of Stockfish calls its listener synchronously, mid-command;
+  sending `go` from inside that call crashes the wasm (`RuntimeError: unreachable`). Browser
+  Workers can't do this (messages arrive from the event loop), so the test adapter delivers
+  lines with `queueMicrotask`.
 
 ### Step 5: Template narrator and hint ladder UI (DESIGN §5.1, §5.3)
 - `TemplateNarrator` turns facts into text. It never fails.
