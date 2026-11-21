@@ -1,6 +1,6 @@
 # Project status and handoff
 
-Last updated: 2026-11-21, phase 2b started: Undo done on branch `phase-2b-undo`. Next: blunder warning.
+Last updated: 2026-11-21, phase 2b: Undo and blunder warning done (draft PR #9, branch `phase-2b-undo`). Next: "why not?".
 Read this first when picking the project up in a new session, then `DESIGN.md` and the ADRs.
 
 ## Where things stand
@@ -10,7 +10,7 @@ Read this first when picking the project up in a new session, then `DESIGN.md` a
 | 0. Skeleton | ✅ Done (PR #2) | Installs on the phone; CI runs on every PR |
 | 1. Play | ✅ Done (PRs #3, #4, #5) | Ben played a full game against Maia 1100 on a Pixel 10 |
 | 2. Hints | ✅ Done (PRs #6, #7, #8) | Ben checked hints on the phone; done-when e2e passes |
-| 2b. Coaching while playing | 🚧 **In progress** (Ben chose it before phase 3) | Undo ✅ (branch `phase-2b-undo`); next: blunder warning, then "why not?" (DESIGN §5.4) |
+| 2b. Coaching while playing | 🚧 **In progress** (Ben chose it before phase 3) | Undo ✅, blunder warning ✅ (draft PR #9); next: "why not?" (DESIGN §5.4) |
 | 3–6, v1.x, v2 | Not started | See `DESIGN.md` §9 |
 
 **Live app:** https://chess-trainer-dri.pages.dev (Cloudflare Pages, ADR-0009). It deploys from `main`
@@ -29,6 +29,10 @@ https://booooh.github.io/chess-trainer/, now shows a "moved" page.
 - AGPL-3.0 with a "Source code" link (ADR-0008). Installable PWA that works offline once Maia is cached.
 - **Hints** (phase 2): on your turn, Hint shows a nudge; More help reveals the piece (circled), the move
   (arrow), then the line explained step by step. The highest level per move goes in `hintsUsed`.
+- **Blunder warning** (phase 2b, "Warn me before a blunder" on the new-game form, off by default):
+  a move that loses ≥ 2 pawns versus the best, allows a forced mate, misses a mate in ≤ 3,
+  throws a better position away with a draw, or leaves a piece to be won is held back with
+  "Are you sure?", the reason, *Take it back* and *Play anyway*. A hanging piece is circled in red.
 - **Undo** (phase 2b): takes back your move and Maia's reply (only your move if she's still
   thinking, which cancels her reply). Only while the game is on. The record counts take-backs.
 - **Practice positions:** `?fen=<FEN>` in the URL starts games from that position (invalid or
@@ -57,6 +61,7 @@ src/core/      Pure TS, no React (lint-enforced)
   teachingLine.ts buildTeachingLine: Stockfish for the user, Maia for the opponent, best-defence branch
   narrator.ts    Template narrator: the text of the four hint levels
   hints.ts       HintCoach: the hint ladder (one more level per press), per position
+  blunders.ts    assessMove (is this move a blunder? as typed facts), BlunderChecker (engine side)
 src/workers/   maia.worker.ts (Maia-3 via onnxruntime-web), maiaClient.ts (request ids, abort,
                crash handling), maiaProtocol.ts (message types), download.ts (progress),
                stockfishClient.ts (queue, stop/abort, start-up timeout; stockfish.js itself is
@@ -69,7 +74,7 @@ e2e/           Playwright on an emulated Pixel 7 against the production build (r
 spikes/maia/   strength.ts: re-runnable Maia strength-by-rating measurement (Node + Stockfish)
 ```
 
-Tests: 148 unit (Vitest; two use real Stockfish in Node) and 8 e2e (Playwright). CI is `.github/workflows/ci.yml`, with jobs
+Tests: 174 unit (Vitest; two use real Stockfish in Node) and 10 e2e (Playwright). CI is `.github/workflows/ci.yml`, with jobs
 `check` → `e2e` → `deploy` (`main` only).
 
 ## Phase 2 plan: Hints
@@ -231,10 +236,34 @@ Requested by Ben after using phase 2 hints. Build in this order, test-first as u
    - UI: Undo button between Hint and Resign, disabled when there's nothing to take back.
      Disabled buttons are now dimmed (they looked enabled before, e.g. "Thinking…").
    - Tests: unit tests for Game/GameSession/App, plus an e2e test (e4, undo, d4 against the real Maia).
-2. **Blunder warning** (option on the new-game form, off by default): before playing a move
-   that drops ≥ ~200 cp versus the best, allows or misses a mate, or newly hangs a piece, ask
-   "Play anyway / Take it back". Pre-analyse while it's your turn so the check after your move
-   is a short search. Reuses `moveFacts` and the narrator for the reason.
+2. **Blunder warning: done** (draft PR #9, same branch).
+   - `assessMove(fen, uci, best, reply)` in `blunders.ts` is pure: from Stockfish's score before
+     the move (`best`) and after it (`reply`, the opponent's view, or null if the game ended) it
+     returns a typed `Blunder`, first match wins: `allowsMate` (unless already lost to a mate),
+     `draws` (the move ends the game in a draw while ≥ +200), `missesMate` (only mates in ≤ 3,
+     which a player can be expected to see), `hangs` (a newly hanging own piece from
+     `moveFacts`, *and* the engine agrees it costs ≥ 100 cp, so sacrifices pass), `loses` (≥ 200 cp).
+     Scores are capped at ±1000 before comparing: +15 → +11 is still winning, not a blunder.
+   - `describeBlunder` in the narrator gives the sentence, e.g. "This leaves your queen on d5 to
+     be taken." It deliberately doesn't name the better move: that's what Hint is for.
+   - `BlunderChecker`: `prepare(fen)` searches the position for 1 s while it's your turn (same
+     FEN: no new search; new FEN: the old search is aborted); `check` then searches the position
+     after your move for 0.3 s. **It never blocks a move:** an engine error or a check slower
+     than 5 s (e.g. Stockfish still starting) means no warning.
+   - `GameSession` takes an optional `MoveChecker`. The move is played on the board at once and
+     Maia's reply waits: `state.review` is `checking`, then cleared or `warning`, and
+     `playAnyway()` / `reconsider()` decide. A move under review doesn't end the game (so a
+     stalemating move isn't saved before you confirm it); resigning drops it. *Take it back*
+     here isn't counted in `takebacks` (that counts the Undo button).
+   - With the option off, Stockfish is still only started by the first hint.
+   - e2e (real Stockfish + Maia): `4k3/8/4p3/8/8/8/8/3QK3 w`, Qd5?? is caught with the queen
+     circled; after taking it back, Qd2 goes straight through. ~3 s in CI-like conditions,
+     including Stockfish start-up.
+   - **Known limits, to tune by feel:** thresholds are guesses; the 1 s vs 0.3 s searches reach
+     different depths, so borderline moves can flicker either way. Draws by threefold repetition
+     aren't spotted (`assessMove` sees one FEN, not the history). After *Take it back* the hint
+     panel starts over (press Hint again). Pre-analysis shares Stockfish with hints, so a hint
+     asked for right after your turn starts may wait up to 1 s. Not measured on the Pixel 10 yet.
 3. **"Why not?":** after a hint, if you play a different move, build the teaching line for your
    move too, compare it with the hint's line, explain why it's worse, then let you continue or
    go back (undo) and play the hint's move. Done when: play a different move after a hint, read

@@ -204,7 +204,10 @@ Requested by Ben after trying phase 2 hints. In build order, since each needs th
    facts extractor), ask before it's played: "This leaves your knight on d4 undefended. Play
    it anyway?" with *Play anyway* or *Take it back*. To keep it fast, analyse the position
    in the background while it's your turn, so only the position after your move needs a short
-   search (~0.3 s).
+   search (~0.3 s). Built: the move appears on the board and Maia's reply waits for the check.
+   The warning names the problem (a forced mate allowed or missed, a draw thrown away, the
+   piece left hanging, or "loses about N pawns"), but not the better move, which is the
+   hint's job. A check that fails or takes over 5 s never blocks the move.
 3. **"Why not?"** After a hint, you may play a different move. The app builds the teaching
    line for *your* move too (Maia's likely reply, then Stockfish), compares the two lines'
    facts and scores, and explains the difference: "After Nf3?, most players reply …Qxb5 and
