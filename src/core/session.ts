@@ -25,6 +25,8 @@ export type SessionState = {
   thinking: boolean;
   /** Set when the opponent failed to move; `retryOpponent()` tries again. */
   error: string | undefined;
+  /** True if `takeBack()` would do something: the game is on and the user has moved. */
+  canTakeBack: boolean;
 };
 
 export type SessionOptions = {
@@ -47,8 +49,12 @@ export class GameSession {
   /** Highest hint level used for each of the user's moves, by ply (index into the moves). */
   private readonly hints = new Map<number, HintLevel>();
   private readonly listeners = new Set<() => void>();
-  private readonly abort = new AbortController();
+  /** Cancels the opponent request in flight, if any (take-back, resign, dispose). */
+  private pending: AbortController | undefined;
   private readonly startedAt: Date;
+  /** Who moved first, which tells whose each ply is. */
+  private readonly firstToMove: Color;
+  private takebacks = 0;
   private thinking = false;
   private error: string | undefined;
   private finished = false;
@@ -56,6 +62,7 @@ export class GameSession {
 
   constructor(private readonly options: SessionOptions) {
     this.game = new Game(options.startFen);
+    this.firstToMove = this.game.turn;
     this.startedAt = (options.now ?? (() => new Date()))();
     this.snapshot = this.buildState();
   }
@@ -105,18 +112,47 @@ export class GameSession {
     this.hints.set(ply, Math.max(level, this.hints.get(ply) ?? 0) as HintLevel);
   }
 
+  /**
+   * Takes back moves so it is the user's turn one move earlier: their last move and the
+   * opponent's reply, or only their move if the reply hasn't come (it is cancelled) or
+   * failed. Hints for those moves are forgotten. Does nothing once the game is over: by
+   * then the record is saved, and records never change.
+   */
+  takeBack(): void {
+    if (!this.canTakeBack()) return;
+    this.cancelPending();
+    this.thinking = false;
+    this.error = undefined;
+    do this.game.undo();
+    while (this.game.turn !== this.options.userColor);
+    for (const ply of this.hints.keys()) if (ply >= this.game.moves.length) this.hints.delete(ply);
+    this.takebacks++;
+    this.changed();
+  }
+
   resign(): void {
     if (this.game.isOver) return;
     this.game.resign(this.options.userColor);
-    this.abort.abort();
+    this.cancelPending();
     this.thinking = false;
     this.changed();
   }
 
   /** Stops listening for the opponent (e.g. the user left the game screen). */
   dispose(): void {
-    this.abort.abort();
+    this.cancelPending();
     this.listeners.clear();
+  }
+
+  private cancelPending(): void {
+    this.pending?.abort();
+    this.pending = undefined;
+  }
+
+  private canTakeBack(): boolean {
+    // The user's first move is ply 0 if they moved first, otherwise ply 1.
+    const firstUserPly = this.firstToMove === this.options.userColor ? 0 : 1;
+    return !this.game.isOver && this.game.moves.length > firstUserPly;
   }
 
   private isOpponentsTurn(): boolean {
@@ -127,7 +163,9 @@ export class GameSession {
     this.thinking = true;
     this.error = undefined;
     this.changed();
-    const signal = this.abort.signal;
+    const request = new AbortController();
+    this.pending = request;
+    const signal = request.signal;
     try {
       const { startFen } = this.options;
       const position = { fen: this.game.fen, moves: this.game.moves, ...(startFen ? { startFen } : {}) };
@@ -139,6 +177,7 @@ export class GameSession {
       this.error = err instanceof Error ? err.message : String(err);
     } finally {
       if (!signal.aborted) {
+        this.pending = undefined;
         this.thinking = false;
         this.changed();
       }
@@ -170,6 +209,7 @@ export class GameSession {
       result: g.result,
       thinking: this.thinking,
       error: this.error,
+      canTakeBack: this.canTakeBack(),
     };
   }
 
@@ -193,6 +233,7 @@ export class GameSession {
       result: this.game.result,
       hintsUsed: [...this.hints].sort(([a], [b]) => a - b).map(([ply, level]) => ({ ply, level })),
       ...(this.options.startFen ? { startFen: this.options.startFen } : {}),
+      ...(this.takebacks > 0 ? { takebacks: this.takebacks } : {}),
       schemaVersion: 1,
     };
   }

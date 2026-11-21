@@ -216,3 +216,108 @@ describe('GameSession: starting position and hints', () => {
     expect(records[0]!.hintsUsed).toEqual([]);
   });
 });
+
+describe('GameSession: taking moves back', () => {
+  /** Plays the user's move and lets the scripted opponent reply. */
+  async function exchange(session: GameSession, reply: () => Promise<void>, uci: Uci) {
+    const done = session.playUserMove(uci);
+    await reply();
+    await done;
+  }
+
+  it('on your turn, takes back your move and the reply, so it is your turn again', async () => {
+    const { opponent, reply } = scriptedOpponent('e7e5', 'b8c6');
+    const session = new GameSession({ userColor: 'white', opponent });
+    await session.start();
+    expect(session.state.canTakeBack).toBe(false);
+    await exchange(session, reply, 'e2e4');
+    await exchange(session, reply, 'g1f3');
+    expect(session.state.canTakeBack).toBe(true);
+
+    session.takeBack();
+    expect(session.state).toMatchObject({ moves: ['e2e4', 'e7e5'], turn: 'white', thinking: false });
+    expect(session.state.dests.get('g1')).toBeDefined();
+    session.takeBack();
+    expect(session.state).toMatchObject({ moves: [], turn: 'white', canTakeBack: false });
+    session.takeBack(); // nothing left: no-op
+    expect(session.state.moves).toEqual([]);
+  });
+
+  it("while the opponent thinks, takes back your move and ignores the reply when it comes", async () => {
+    const { opponent, asked, reply } = scriptedOpponent('e7e5', 'c7c5');
+    const signals: AbortSignal[] = [];
+    const watching: Opponent = { elo: 1100, chooseMove: (p, signal) => (signals.push(signal!), opponent.chooseMove(p, signal)) };
+    const s2 = new GameSession({ userColor: 'white', opponent: watching });
+    const done = s2.playUserMove('e2e4');
+    expect(s2.state).toMatchObject({ thinking: true, canTakeBack: true });
+    s2.takeBack();
+    expect(signals[0]!.aborted).toBe(true);
+    expect(s2.state).toMatchObject({ moves: [], thinking: false, turn: 'white' });
+    await reply(); // the cancelled request answers anyway
+    await done;
+    expect(s2.state.moves).toEqual([]);
+
+    // The game carries on normally afterwards.
+    await exchange(s2, reply, 'd2d4');
+    expect(s2.state.moves).toEqual(['d2d4', 'c7c5']);
+    expect(asked.map((a) => a.moves)).toEqual([['e2e4'], ['d2d4']]);
+  });
+
+  it('after the opponent failed to move, takes back your move and clears the error', async () => {
+    const opponent: Opponent = { elo: 1100, chooseMove: () => Promise.reject(new Error('worker crashed')) };
+    const session = new GameSession({ userColor: 'white', opponent });
+    await session.playUserMove('e2e4');
+    session.takeBack();
+    expect(session.state).toMatchObject({ moves: [], error: undefined, thinking: false });
+  });
+
+  it("as black, never takes back the opponent's first move on its own", async () => {
+    const { opponent, reply } = scriptedOpponent('e2e4', 'd2d4');
+    const session = new GameSession({ userColor: 'black', opponent });
+    const started = session.start();
+    expect(session.state.canTakeBack).toBe(false); // the opponent's first move is pending
+    await reply();
+    await started;
+    expect(session.state.canTakeBack).toBe(false);
+    await exchange(session, reply, 'e7e5');
+    session.takeBack();
+    expect(session.state).toMatchObject({ moves: ['e2e4'], turn: 'black' });
+  });
+
+  it('cannot take back once the game is over', async () => {
+    const { opponent, reply } = scriptedOpponent('e7e5', 'd8h4');
+    const session = new GameSession({ userColor: 'white', opponent });
+    await exchange(session, reply, 'f2f3');
+    await exchange(session, reply, 'g2g4');
+    expect(session.state.status.kind).toBe('checkmate');
+    expect(session.state.canTakeBack).toBe(false);
+    session.takeBack();
+    expect(session.state.moves).toHaveLength(4);
+  });
+
+  it('drops hints for the moves taken back, and counts take-backs in the record', async () => {
+    const records: GameRecord[] = [];
+    const { opponent, reply } = scriptedOpponent('e7e5', 'b8c6', 'g8f6');
+    const session = new GameSession({ userColor: 'white', opponent, onFinished: (r) => void records.push(r) });
+    session.noteHint(2);
+    await exchange(session, reply, 'e2e4');
+    session.noteHint(4);
+    await exchange(session, reply, 'g1f3');
+    session.takeBack(); // drops the level-4 hint for ply 2
+    await exchange(session, reply, 'f1c4');
+    session.resign();
+    expect(records[0]).toMatchObject({
+      moves: ['e2e4', 'e7e5', 'f1c4', 'g8f6'],
+      hintsUsed: [{ ply: 0, level: 2 }],
+      takebacks: 1,
+    });
+  });
+
+  it('leaves takebacks out of the record when there were none', () => {
+    const records: GameRecord[] = [];
+    const { opponent } = scriptedOpponent();
+    const session = new GameSession({ userColor: 'white', opponent, onFinished: (r) => void records.push(r) });
+    session.resign();
+    expect(records[0]).not.toHaveProperty('takebacks');
+  });
+});
