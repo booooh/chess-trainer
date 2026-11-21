@@ -67,7 +67,8 @@ export class MaiaClient implements HumanMovePredictor {
       signal?.addEventListener('abort', () => this.settle(id)?.reject(new DOMException('Prediction aborted', 'AbortError')), {
         once: true,
       });
-      this.worker.postMessage({ type: 'predict', id, fen: req.fen, moves: [...req.moves], selfElo: req.selfElo, oppoElo: req.oppoElo });
+      const { fen, moves, startFen, selfElo, oppoElo } = req;
+      this.worker.postMessage({ type: 'predict', id, fen, moves: [...moves], ...(startFen ? { startFen } : {}), selfElo, oppoElo });
     });
   }
 

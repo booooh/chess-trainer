@@ -36,9 +36,9 @@ already have instead, set `PW_CHROMIUM_PATH` to its executable.
 
 | Path | What |
 |---|---|
-| `src/core/` | Pure TypeScript domain logic, no React (lint-enforced): `Game`, `GameSession`, `MaiaOpponent` |
+| `src/core/` | Pure TypeScript domain logic, no React (lint-enforced): `Game`, `GameSession`, `MaiaOpponent`, the `Engine` interface and UCI parsing |
 | `src/ui/` | React components: chessground `Board` wrapper, new-game form, play screen |
-| `src/workers/` | Web Workers (Maia-3 via ONNX Runtime) and their typed main-thread clients |
+| `src/workers/` | Web Workers (Maia-3 via ONNX Runtime, Stockfish 19 Lite) and their typed main-thread clients |
 | `src/storage/` | IndexedDB (Dexie) implementations of core repository interfaces |
 | `e2e/` | Playwright tests, run on an emulated Pixel 7 |
 | `spikes/` | Throwaway experiments and measurements (see `docs/spikes/`) |
@@ -67,6 +67,9 @@ Nothing deploys until lint, type-check, unit tests and e2e tests have passed.
 The app used to live at https://booooh.github.io/chess-trainer/ ([ADR-0007](docs/adr/0007-github-pages-first.md)).
 `legacy/github-pages/` holds the "moved" page that replaces it, deployed by hand with the
 *Replace GitHub Pages site* workflow.
+
+**Practice positions:** add `?fen=<FEN>` to the URL to start games from that position, e.g.
+`/?fen=4k3/7p/q7/1N6/8/8/7P/4K3%20w%20-%20-%200%201` (a knight fork, handy for trying hints).
 
 To install on Android: open the site in Chrome, then menu → **Add to Home screen** / **Install app**.
 

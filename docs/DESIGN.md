@@ -97,8 +97,11 @@ Runs in a Web Worker and is spoken to with UCI text commands. Used **only for an
 - `MultiPV 3` so we get several candidate moves, not just one.
 - Phone budget: about 1–1.5 s per hint (`go movetime`), which reaches depth ~14–18. That's
   far more than enough to find the tactics that matter at 600–1000.
-- A small `EngineClient` wrapper turns UCI text into typed results:
-  `{ move, scoreCp | mateIn, pv: Move[], depth }[]`.
+- The `Engine` interface (`src/core/engine.ts`), implemented by `StockfishClient`, turns UCI
+  text into typed results: `{ move, score: cp | mate, pv: Uci[], depth }[]`, scored from the side
+  to move's point of view. One search at a time, queued and cancellable.
+- Build: Stockfish 19 **Lite, single-threaded** (1.8 MB wasm; no cross-origin isolation needed).
+  Started on first use, not at app start.
 
 ### 4.2 Maia-3 — the "human"
 
@@ -186,6 +189,26 @@ LLM prompts carry **only** the facts plus SAN moves, and say "explain these fact
 beginner; do not add moves or claims". That stops a model from inventing chess lines,
 which is what makes a small local model usable at all.
 
+### 5.4 Coaching while playing (phase 2b, planned)
+
+Requested by Ben after trying phase 2 hints. In build order, since each needs the one before:
+
+1. **Undo.** Take back moves to choose a different one. Normally a pair (your move and Maia's
+   reply), so it's your turn again; repeat to go further back. `hintsUsed` entries for undone
+   plies are dropped. Open question: should a finished game's record show that moves were
+   taken back (e.g. a `takebacks` count), like hints might mark it "assisted"?
+2. **Blunder warning** (an option, off by default). When your move loses a lot compared with
+   the best one (e.g. ≥ 200 cp, a missed or allowed mate, or a newly hanging piece from the
+   facts extractor), ask before it's played: "This leaves your knight on d4 undefended. Play
+   it anyway?" with *Play anyway* or *Take it back*. To keep it fast, analyse the position
+   in the background while it's your turn, so only the position after your move needs a short
+   search (~0.3 s).
+3. **"Why not?"** After a hint, you may play a different move. The app builds the teaching
+   line for *your* move too (Maia's likely reply, then Stockfish), compares the two lines'
+   facts and scores, and explains the difference: "After Nf3?, most players reply …Qxb5 and
+   you lose the knight. Nc7+ wins the queen instead." Then you choose: **continue** with your
+   move, or **go back** (undo) and play the hint's move.
+
 ## 6. Openings
 
 ### 6.1 Data
@@ -261,7 +284,8 @@ Current status and the detailed plan for the next phase: [`docs/STATUS.md`](STAT
 |---|---|---|---|
 | 0. Skeleton | Vite/React/TS, PWA, CI, lint, tests, deploy | Empty board installs on phone | ✅ Done |
 | 1. Play | Board, chess.js, Maia opponent, save games | Full game vs Maia 1100 on phone | ✅ Done |
-| 2. Hints | **First: move hosting to Cloudflare Pages with PR previews (ADR-0009).** Then Stockfish worker, hint ladder, teaching line, facts + templates | PRs get a working preview URL; level-4 hint explains a fork correctly | ⏭️ Next |
+| 2. Hints | **First: move hosting to Cloudflare Pages with PR previews (ADR-0009).** Then Stockfish worker, hint ladder, teaching line, facts + templates | PRs get a working preview URL; level-4 hint explains a fork correctly | ✅ Done |
+| 2b. Coaching while playing | Undo, blunder warning, "why not?" for a move other than the hint's (§5.4) | Play a different move after a hint, read why it's worse, go back and play the hint's move | |
 | 3. Openings | ECO lookup, tree, stats, beginner suggestions, Explore/Deepen | Deepen mode repeats the Italian 3 games in a row | |
 | 4. Online LLM | BYO-key narrator (Anthropic / OpenAI-compatible), fallback chain | Pull network → template text appears | |
 | 5. Local LLM | WebLLM/wllama narrator, download UX | Works offline in airplane mode | |

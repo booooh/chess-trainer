@@ -6,5 +6,3 @@ unit-tested with Vitest and could later be ported or reused by the v2 backend.
 
 ESLint enforces the "no React / no UI imports" rule for this folder. Heavy work (Stockfish,
 Maia, LLMs) is reached through typed interfaces backed by Web Workers, so tests use fakes.
-
-Empty until phase 1.

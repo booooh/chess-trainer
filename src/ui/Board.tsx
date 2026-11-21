@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Chessground } from 'chessground';
 import type { Api } from 'chessground/api';
+import type { DrawShape } from 'chessground/draw';
 import type { Key } from 'chessground/types';
 import type { Color, Square } from '../core/game';
 import 'chessground/assets/chessground.base.css';
@@ -22,7 +23,13 @@ export type BoardProps = {
   /** Which colour the user moves (needed for chessground's movable.color). */
   userColor?: Color;
   onMove?: (from: Square, to: Square) => void;
+  /** Highlights drawn by the app (not the user): a circle on `orig`, or an arrow to `dest`. */
+  shapes?: readonly BoardShape[];
 };
+
+export type BoardShape = { orig: Square; dest?: Square };
+
+const NO_SHAPES: readonly BoardShape[] = [];
 
 /**
  * Thin React wrapper around chessground. chessground manages its own DOM, so React only
@@ -38,6 +45,7 @@ export function Board({
   dests,
   userColor,
   onMove,
+  shapes = NO_SHAPES,
 }: BoardProps) {
   const el = useRef<HTMLDivElement>(null);
   const api = useRef<Api | null>(null);
@@ -75,6 +83,10 @@ export function Board({
       },
     });
   }, [fen, orientation, turnColor, lastMove, check, dests, userColor]);
+
+  useEffect(() => {
+    api.current?.setAutoShapes(shapes.map((s): DrawShape => ({ orig: s.orig as Key, dest: s.dest as Key | undefined, brush: 'green' })));
+  }, [shapes]);
 
   return (
     <div className="board-frame">

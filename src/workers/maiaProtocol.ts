@@ -3,7 +3,7 @@ import type { Uci } from '../core/game';
 
 export type ToWorker =
   | { type: 'load' }
-  | { type: 'predict'; id: number; fen: string; moves: Uci[]; selfElo: number; oppoElo: number };
+  | { type: 'predict'; id: number; fen: string; moves: Uci[]; startFen?: string; selfElo: number; oppoElo: number };
 
 export type FromWorker =
   | { type: 'progress'; loaded: number; total: number }

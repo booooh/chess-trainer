@@ -75,4 +75,21 @@ describe('MaiaOpponent', () => {
     });
     expect(seen).toMatchObject({ selfElo: 1100, oppoElo: 800 });
   });
+
+  it('passes on the position the moves start from, for games from a practice position', async () => {
+    let seen: PredictRequest | undefined;
+    const predictor: HumanMovePredictor = {
+      async predict(req) {
+        seen = req;
+        return new Map([['e8d7', 1]]);
+      },
+    };
+    const startFen = '4k3/7p/q7/1N6/8/8/7P/4K3 w - - 0 1';
+    await new MaiaOpponent(predictor, { elo: 1100 }).chooseMove({
+      fen: '4k3/2N4p/q7/8/8/8/7P/4K3 b - - 1 1',
+      moves: ['b5c7'],
+      startFen,
+    });
+    expect(seen).toMatchObject({ moves: ['b5c7'], startFen });
+  });
 });

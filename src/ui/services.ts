@@ -1,3 +1,4 @@
+import type { Engine } from '../core/engine';
 import type { HumanMovePredictor } from '../core/opponent';
 import type { GameRepository } from '../core/records';
 
@@ -30,6 +31,8 @@ export class ModelStatusStore {
  */
 export type AppServices = {
   predictor: HumanMovePredictor;
+  /** Stockfish, for analysis (hints). */
+  engine: Engine;
   modelStatus: ModelStatusStore;
   repository: GameRepository;
   random: () => number;

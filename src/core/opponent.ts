@@ -8,6 +8,8 @@ export type PredictRequest = {
   fen: string;
   /** All moves from the start position to `fen`, in UCI. Maia uses recent ones as context. */
   moves: readonly Uci[];
+  /** The position `moves` start from, if it isn't the usual one (a practice position). */
+  startFen?: string;
   /** Rating of the player to move. */
   selfElo: number;
   /** Rating of the other player. */
@@ -71,10 +73,11 @@ export class MaiaOpponent {
     return this.options.elo;
   }
 
-  async chooseMove(position: { fen: string; moves: readonly Uci[] }, signal?: AbortSignal): Promise<Uci> {
+  async chooseMove(position: { fen: string; moves: readonly Uci[]; startFen?: string }, signal?: AbortSignal): Promise<Uci> {
     const { elo, opponentElo = elo, floor, random = Math.random } = this.options;
+    const { fen, moves, startFen } = position;
     const probs = await this.predictor.predict(
-      { fen: position.fen, moves: position.moves, selfElo: elo, oppoElo: opponentElo },
+      { fen, moves, ...(startFen ? { startFen } : {}), selfElo: elo, oppoElo: opponentElo },
       signal,
     );
     return sampleMove(probs, { floor, random });

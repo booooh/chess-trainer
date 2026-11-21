@@ -52,7 +52,15 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
     if (!maia) throw new Error('Maia model is not loaded');
     // topK 0: we only need the move probabilities, not per-candidate win/draw/loss estimates
     // (each of those costs another forward pass).
-    const r = await maia.predict({ fen: msg.fen, priorMoves: msg.moves, selfElo: msg.selfElo, oppoElo: msg.oppoElo, topK: 0 });
+    // `baseFen`: Maia replays priorMoves from here (the usual start position if not given).
+    const r = await maia.predict({
+      fen: msg.fen,
+      priorMoves: msg.moves,
+      ...(msg.startFen ? { baseFen: msg.startFen } : {}),
+      selfElo: msg.selfElo,
+      oppoElo: msg.oppoElo,
+      topK: 0,
+    });
     post({ type: 'prediction', id: msg.id, probabilities: [...r.moves] });
   } catch (err) {
     post({ type: 'predictionFailed', id: msg.id, message: err instanceof Error ? err.message : String(err) });

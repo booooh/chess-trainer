@@ -1,6 +1,6 @@
 # Project status and handoff
 
-Last updated: 2026-11-21, phase 2 step 1 (Cloudflare Pages) merged in PR #6. Phase 1: PRs #1–#5.
+Last updated: 2026-11-21, phase 2 done (PRs #6, #7, #8; hints checked on the phone). Next: phase 2b, coaching while playing.
 Read this first when picking the project up in a new session, then `DESIGN.md` and the ADRs.
 
 ## Where things stand
@@ -9,7 +9,8 @@ Read this first when picking the project up in a new session, then `DESIGN.md` a
 |---|---|---|
 | 0. Skeleton | ✅ Done (PR #2) | Installs on the phone; CI runs on every PR |
 | 1. Play | ✅ Done (PRs #3, #4, #5) | Ben played a full game against Maia 1100 on a Pixel 10 |
-| 2. Hints | 🚧 **In progress** | Step 1 (Cloudflare Pages, ADR-0009) done in PR #6; step 2 next. Plan below |
+| 2. Hints | ✅ Done (PRs #6, #7, #8) | Ben checked hints on the phone; done-when e2e passes |
+| 2b. Coaching while playing | ⏭️ **Next** (Ben to confirm order vs. phase 3) | Undo, blunder warning, "why not?" (DESIGN §5.4) |
 | 3–6, v1.x, v2 | Not started | See `DESIGN.md` §9 |
 
 **Live app:** https://chess-trainer-dri.pages.dev (Cloudflare Pages, ADR-0009). It deploys from `main`
@@ -17,7 +18,7 @@ only after CI passes, and every PR from this repo gets a preview at
 `https://<branch-name>.chess-trainer-dri.pages.dev`, linked in a PR comment. The Pages project is
 named `chess-trainer`, but that `pages.dev` subdomain was taken, so Cloudflare added `-dri`;
 `https://chess-trainer.pages.dev` is someone else's site. The old address,
-https://booooh.github.io/chess-trainer/, still serves the phase 1 app until the "moved" page replaces it.
+https://booooh.github.io/chess-trainer/, now shows a "moved" page.
 
 ### What the app does today
 - New game: play as White, Black or Random against Maia-3 rated 400–1500 (Lichess scale, default 1100).
@@ -26,6 +27,10 @@ https://booooh.github.io/chess-trainer/, still serves the phase 1 app until the 
 - Status line, move list, resign (with confirmation), retry if Maia fails, and model download progress.
 - Finished games are saved to IndexedDB (`chess-trainer` database, `games` table, DESIGN §7 format).
 - AGPL-3.0 with a "Source code" link (ADR-0008). Installable PWA that works offline once Maia is cached.
+- **Hints** (phase 2): on your turn, Hint shows a nudge; More help reveals the piece (circled), the move
+  (arrow), then the line explained step by step. The highest level per move goes in `hintsUsed`.
+- **Practice positions:** `?fen=<FEN>` in the URL starts games from that position (invalid or
+  finished positions are ignored). Games record it as `startFen`.
 
 ### Known limitations (deliberately left out so far)
 - A game in progress is lost on reload; only finished games are saved.
@@ -43,16 +48,26 @@ src/core/      Pure TS, no React (lint-enforced)
   opponent.ts    HumanMovePredictor interface, sampleMove (2% floor), MaiaOpponent
   session.ts     GameSession: turns, opponent calls, resign, retry, emits GameRecord once
   records.ts     GameRecord type + GameRepository interface
+  engine.ts      Engine interface (analyse → Line[]), Score/Line types, lazyEngine
+  uci.ts         Parses Stockfish's UCI output (info/bestmove) into Lines
+  board.ts       Tactics board: attack maps (x-rays via "gone" squares), SEE, material
+  facts.ts       Facts extractor: moveFacts (material, fork, newly hanging, eval swing), hangingPieces
+  teachingLine.ts buildTeachingLine: Stockfish for the user, Maia for the opponent, best-defence branch
+  narrator.ts    Template narrator: the text of the four hint levels
+  hints.ts       HintCoach: the hint ladder (one more level per press), per position
 src/workers/   maia.worker.ts (Maia-3 via onnxruntime-web), maiaClient.ts (request ids, abort,
-               crash handling), maiaProtocol.ts (message types), download.ts (progress)
+               crash handling), maiaProtocol.ts (message types), download.ts (progress),
+               stockfishClient.ts (queue, stop/abort, start-up timeout; stockfish.js itself is
+               the worker and speaks raw UCI, so there's no protocol file or worker file),
+               nodeStockfish.testutil.ts (real Stockfish in Node for tests)
 src/storage/   gameRepository.ts: Dexie implementation (add-only: games are immutable)
 src/ui/        Board (chessground wrapper), NewGameForm, PlayScreen, services (dependency
                injection: real ones in browserServices.ts, fakes in tests), gameOptions
-e2e/           Playwright on an emulated Pixel 7 against the production build (real Maia)
+e2e/           Playwright on an emulated Pixel 7 against the production build (real Maia, real Stockfish)
 spikes/maia/   strength.ts: re-runnable Maia strength-by-rating measurement (Node + Stockfish)
 ```
 
-Tests: 46 unit (Vitest) and 5 e2e (Playwright). CI is `.github/workflows/ci.yml`, with jobs
+Tests: 137 unit (Vitest; two use real Stockfish in Node) and 7 e2e (Playwright). CI is `.github/workflows/ci.yml`, with jobs
 `check` → `e2e` → `deploy` (`main` only).
 
 ## Phase 2 plan: Hints
@@ -86,49 +101,132 @@ Gives every later phase 2 PR a preview link you can open on the phone before mer
 - Checked: the first deploy created the project. The preview and production both work
   (Ben, on the phone), and `/assets/*` is served with `immutable`.
 
-**Still to do:**
-1. Install the app on the phone from https://chess-trainer-dri.pages.dev, if not done yet.
-2. Run **Actions → Replace GitHub Pages site with a "moved" page** with
-   `https://chess-trainer-dri.pages.dev/`. Open the old
-   address on the phone to confirm it switches to the "moved" page.
-3. Later: turn GitHub Pages off (Settings → Pages), delete `github-pages-moved.yml` and
-   `legacy/`, and delete the `github-pages` environment.
+- Ben ran the "moved" workflow; the old address now shows the "moved" page.
+
+**Later (housekeeping):** turn GitHub Pages off (Settings → Pages), then delete
+`github-pages-moved.yml`, `legacy/` and the `github-pages` environment.
 
 ### Step 2: Stockfish engine worker (DESIGN §4.1, ADR-0002)
-- Use the `stockfish` npm package (19.0.1, already a devDependency for the spike; make it a
-  dependency). Use the **lite single-threaded** build: `bin/stockfish-19-lite-single.js` (28 KB)
-  plus `.wasm` (1.8 MB). It's GPL-3.0, which is compatible with our AGPL (ADR-0008).
-- **Pitfall to check:** stockfish.js finds its `.wasm` from its own script URL (`locateFile`).
-  Vite's hashed asset names can break that pairing. Options: serve both files unhashed from
-  `public/`, or point it at the wasm explicitly. Try it in the production build and the e2e test,
-  not just `vite dev`.
-- `EngineClient` in core: `analyse(fen, { multiPv: 3, movetimeMs: 1000–1500 }) → Promise<Line[]>`
-  where `Line = { move, scoreCp | mateIn, pv: Uci[], depth }`. It needs a request queue and
-  cancellation, because Stockfish runs one search at a time (`stop`, then wait for `bestmove`).
-  Parse UCI `info … multipv N … score cp|mate … pv …` lines in a pure, unit-tested function.
-- Mirror the Maia pattern: a protocol file, a worker, a main-thread client with a fake-worker test,
-  and injected services so UI tests use a fake engine.
+**Done (draft PR #8, branch `phase-2-stockfish-engine`):**
+- `stockfish` 19.0.1 is a dependency (pinned). The app uses the **lite single-threaded** build:
+  `stockfish-19-lite-single.js` (28 KB) + `.wasm` (1.8 MB, 1.2 MB compressed). GPL-3.0, compatible with
+  our AGPL (ADR-0008).
+- **The wasm pitfall** (stockfish.js finds its `.wasm` by swapping `.js` → `.wasm` in its own URL):
+  - First attempt: Vite-hashed names plus the wasm URL in the worker URL's `#hash`, which
+    stockfish.js reads first. **It broke whenever the service worker served the script from its
+    cache**: the worker's location then has no hash, so the wasm name was guessed wrong and the
+    engine never started. On a phone that's every visit after the first. Fresh-browser e2e tests
+    missed it; the hint e2e test now reloads so the service worker is in control.
+  - Now: a Vite plugin (`stockfishEngine` in `vite.config.ts`) publishes
+    `engine/stockfish-<version>-lite-single.{js,wasm}` with matching names (served from
+    node_modules in dev). `_headers` caches `/engine/*` as immutable; the version busts it.
+- `Engine` (in `src/core/engine.ts`): `analyse(fen, { multiPv, movetimeMs }, signal) → Line[]`, with
+  `Line = { move, score: {type:'cp'|'mate', value}, pv, depth }`. Scores are from the side to
+  move's point of view (UCI convention). Checkmate and stalemate give `[]`.
+- `uci.ts` parses real Stockfish output: the latest line per MultiPV slot wins (a stopped
+  search leaves slots at different depths), provisional `lowerbound`/`upperbound` lines are
+  skipped, and a stale slot that repeats a move is dropped.
+- `StockfishClient`: waits for `uciok`, runs one search at a time, resends MultiPV only when it
+  changes. Abort: a queued request is dropped; the running one gets `stop`, and the next search
+  waits for its `bestmove`. Refuses FENs and options that could inject UCI commands.
+  **A missing wasm raises no error event, the engine just never answers**, so a 30 s start-up
+  timeout rejects everything instead of leaving a hint spinning forever.
+- `services.engine` is a `lazyEngine`: the worker starts on the first `analyse`, so nobody downloads
+  Stockfish until the hint UI asks for it.
+
+**Still to do:**
+- Measure on the Pixel 10 once the hint UI exists: depth reached in 1–1.5 s, and the first
+  start-up time (download + compile). For reference, in Node in the cloud container: depth 13–16 in 300 ms.
+
+**Follow-up (not urgent): offline wasm.** `.wasm` files aren't precached or runtime-cached by the
+service worker (`globIgnores` in `vite.config.ts`). Offline they're served from the browser's HTTP
+cache, which works on Cloudflare thanks to `immutable` (checked: ORT's wasm loads offline on
+production after one visit), but the browser may evict it under storage pressure. A Workbox
+`runtimeCaching` CacheFirst rule for `/assets/*.wasm` would make it as durable as the Maia model.
 
 ### Step 3: Facts extractor (DESIGN §5.3, ADR-0004)
-Pure TS in `src/core/`, unit-tested on hand-picked FENs. Start with what the done-when needs:
-**fork** (one piece attacking two or more valuable targets, with check counting), **hanging piece**
-(static exchange evaluation: cheapest captures first), material change, and eval swing. Add pins,
-skewers, mate threats and opening principles afterwards.
+**Done (draft PR #8):**
+- `board.ts`: own attack maps rather than chess.js, because an exchange needs "who attacks this
+  square once these pieces are gone" (x-rays). `see()` = static exchange evaluation: cheapest
+  capture first, either side may stop, a king only captures on an undefended square. Pins and en
+  passant are ignored (the usual SEE simplification).
+- `facts.ts`, `moveFacts(fen, uci, evals?)` returns, in order:
+  - `materialChange` for the mover (captures, promotions);
+  - `fork` by the moved piece: ≥2 targets, each the king or a non-pawn piece it would win
+    material by taking; not a fork if the forker can itself be won (e.g. a check the queen takes);
+  - `hanging` pieces the move newly leaves winnable, either side's (SEE gain > 0);
+  - `evalSwing` from the mover's point of view, only if it changes by ≥100 cp (configurable).
+- `hangingPieces(fen)` for a whole position (for the level-1 nudge "your knight is hanging").
+- Mate scores map to ±10000 minus the distance to mate (`scoreToCp`).
+- Not yet: pins, skewers, mate threats, opening principles.
+
+**Lesson for the narrator:** facts are about the *position*, not the outcome. In
+`r3k3/7p/8/1N6/…` Nc7+ is a real fork, but after Nxa8 the knight is trapped in the corner and
+Stockfish says the position is equal. Teaching lines only pick moves Stockfish rates near the
+best, which guards against most of this; the narrator should still only say "wins material"
+when the eval agrees.
 
 ### Step 4: Teaching line (DESIGN §5.2)
-- Your move: among the MultiPV candidates within about 30 cp of the best, prefer the teachable one.
-- Opponent's reply: Maia's most likely move at the opponent's rating. The `HumanMovePredictor`
-  already returns full probabilities.
-- Branch when Maia's reply differs from Stockfish's best defence.
-- 3–5 plies, extended to 7 only while captures or checks are pending.
+**Done (draft PR #8)**, `buildTeachingLine(request, { engine, predictor }, options, signal)`:
+- **Your move:** Stockfish candidates (MultiPV 3, 1.2 s) within 30 cp of the best; a mate is only
+  "equal" to other mates. Prefer a motif (fork or material won), then the move Maia gives the
+  highest probability at the *user's* rating, then Stockfish's order.
+- **Opponent replies:** Maia's most likely move at the opponent's rating. If the first reply
+  isn't Stockfish's best defence, `bestDefence` holds Stockfish's own line from that reply on
+  (no extra engine time).
+- **Your later moves:** Stockfish best move, 0.4 s each. A typical hint costs ~1.6–2 s of
+  engine time; all timings are options.
+- **Length:** ≥3 plies, then stop at the first ply that is neither capture nor check; cap 7;
+  stop if the game ends.
+- Each ply carries its facts; an opponent reply that loses ground gets an `evalSwing`.
+- Integration test with real Stockfish: the queen fork Nc7+ is taught, then Nxa6.
+- **Test gotcha:** the Node build of Stockfish calls its listener synchronously, mid-command;
+  sending `go` from inside that call crashes the wasm (`RuntimeError: unreachable`). Browser
+  Workers can't do this (messages arrive from the event loop), so the test adapter delivers
+  lines with `queueMicrotask`.
 
 ### Step 5: Template narrator and hint ladder UI (DESIGN §5.1, §5.3)
-- `TemplateNarrator` turns facts into text. It never fails.
-- Hint button: each press reveals one more level: nudge → piece → move arrow → line with explanation.
-  Use chessground's `drawable` shapes for highlights and arrows.
-- Record the highest level used per ply in `GameRecord.hintsUsed` (the field already exists).
-- Done-when e2e: a fixed position with a fork, with level 4 showing the right move and an explanation mentioning the fork.
-  Use a fake engine in unit tests; one e2e test can use real Stockfish.
+**Done (draft PR #8):**
+- `narrator.ts` (template narrator, never fails): `narrate(line, { fen, userColor })` gives
+  - level 1 nudge, first match wins: mate in one / forced mate in N / fork / your piece under
+    attack / you can win material / look for a check / "no tactic: improve your position";
+  - level 2 "Look at your knight on b5." (circle), level 3 "Play Nc7+." (arrow);
+  - level 4 steps: the fork and its targets, "Most players reply …" (Maia ≠ best) or "The best
+    reply is …", captures as "wins" or "takes" (taken straight back = a trade), a material
+    summary, and the best defence. **Material is only claimed when Stockfish's score is ≥ +100.**
+- `hints.ts`, `HintCoach`: first press builds the line (button shows "Thinking…"), later presses
+  reveal levels without analysing again; a new position starts over; failures are shown with
+  the reason and retried on the next press; each level shown calls `session.noteHint`.
+- `GameSession.noteHint` keeps the highest level per ply → `GameRecord.hintsUsed`
+  (`ply` indexes `moves`). Hints are only offered on the user's turn; the panel and shapes
+  disappear as soon as a move is made.
+- `Board` takes `shapes` (chessground `setAutoShapes`, green brush).
+- The user's rating isn't known, so the opponent's rating stands in for "which move would a
+  human find" (`userElo` in HintCoach).
+- **Done-when e2e** (`e2e/hints.spec.ts`, real Stockfish + real Maia, service worker in control):
+  in `4k3/7p/q7/1N6/8/8/7P/4K3 w`, level 4 says "Nc7+ is a fork: the knight attacks the king and
+  the queen at the same time" and "Then Nxa6 wins the queen". A hint takes ~2.5 s there.
+- **Bug found by it:** maia3-js replays `moves` from the standard start unless given `baseFen`, so
+  every Maia call failed in practice positions. `startFen` now travels with each request.
+
+- Ben tried it on the phone: everything works as expected.
+- Not measured yet: how long a hint takes on the Pixel 10 (the first one includes starting
+  Stockfish). Worth timing when tuning the blunder warning, which needs fast analysis.
+
+## Next: phase 2b, coaching while playing (DESIGN §5.4)
+Requested by Ben after using phase 2 hints. Build in this order, test-first as usual:
+1. **Undo:** take back your move and Maia's reply (repeat to go further back). Needs
+   `Game.undo`, a `GameSession.takeBack()` that cancels a pending Maia reply, dropping
+   `hintsUsed` entries for undone plies, and an Undo button. Decide whether records count
+   take-backs.
+2. **Blunder warning** (option on the new-game form, off by default): before playing a move
+   that drops ≥ ~200 cp versus the best, allows or misses a mate, or newly hangs a piece, ask
+   "Play anyway / Take it back". Pre-analyse while it's your turn so the check after your move
+   is a short search. Reuses `moveFacts` and the narrator for the reason.
+3. **"Why not?":** after a hint, if you play a different move, build the teaching line for your
+   move too, compare it with the hint's line, explain why it's worse, then let you continue or
+   go back (undo) and play the hint's move. Done when: play a different move after a hint, read
+   why it's worse, go back and play the hint's move.
 
 ### Open questions for phase 2 (also in DESIGN §10)
 - Threshold for "teachable but slightly worse" moves.

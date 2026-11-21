@@ -1,7 +1,8 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import type { Square } from '../core/game';
+import type { HintCoach, HintState } from '../core/hints';
 import type { GameSession, SessionState } from '../core/session';
-import { Board } from './Board';
+import { Board, type BoardShape } from './Board';
 
 const PROMOTION_PIECES = [
   ['q', 'Queen'],
@@ -36,13 +37,40 @@ function moveRows(san: readonly string[]): string[] {
   return rows;
 }
 
-type Props = { session: GameSession; elo: number; onNewGame: () => void };
+/** Level 2 circles the piece to move; level 3 draws the move as an arrow. */
+function hintShapes(h: HintState): BoardShape[] {
+  if (h.status !== 'shown' || h.level < 2) return [];
+  const { from, to } = h.text.move;
+  return h.level >= 3 ? [{ orig: from, dest: to }] : [{ orig: from }];
+}
 
-export function PlayScreen({ session, elo, onNewGame }: Props) {
+function hintButtonLabel(h: HintState): string | null {
+  switch (h.status) {
+    case 'thinking':
+      return 'Thinking…';
+    case 'shown':
+      return h.level < 4 ? 'More help' : null;
+    case 'none':
+      return null;
+    default:
+      return 'Hint';
+  }
+}
+
+type Props = { session: GameSession; hints: HintCoach; elo: number; onNewGame: () => void };
+
+export function PlayScreen({ session, hints, elo, onNewGame }: Props) {
   const s = useSyncExternalStore(session.subscribe, () => session.state);
+  const hint = useSyncExternalStore(hints.subscribe, () => hints.state);
   const [promotion, setPromotion] = useState<[Square, Square] | null>(null);
   const [confirmResign, setConfirmResign] = useState(false);
   const over = s.status.kind !== 'playing';
+  const yourTurn = !over && !s.thinking && s.turn === s.userColor;
+  const shapes = useMemo(() => hintShapes(hint), [hint]);
+  const hintLabel = yourTurn ? hintButtonLabel(hint) : null;
+
+  // A hint belongs to one position: hide it as soon as a move is made.
+  useEffect(() => hints.reset(), [hints, s.moves.length]);
 
   const play = (uci: string) => {
     // An illegal move just leaves the position as it was; the board re-syncs from state.
@@ -62,6 +90,7 @@ export function PlayScreen({ session, elo, onNewGame }: Props) {
         dests={promotion ? new Map() : s.dests}
         userColor={s.userColor}
         onMove={onMove}
+        shapes={yourTurn ? shapes : undefined}
       />
       <section className="panel play" aria-label="Game">
         <p className="opponent">
@@ -89,6 +118,27 @@ export function PlayScreen({ session, elo, onNewGame }: Props) {
           </div>
         )}
 
+        {yourTurn && (hint.status === 'shown' || hint.status === 'failed') && (
+          <section className="hint-panel" aria-label="Hint">
+            {hint.status === 'failed' ? (
+              <p>Couldn’t get a hint: {hint.message}</p>
+            ) : (
+              <>
+                <p>{hint.text.nudge}</p>
+                {hint.level >= 2 && <p>{hint.text.piece.text}</p>}
+                {hint.level >= 3 && <p>{hint.text.move.text}</p>}
+                {hint.level >= 4 && (
+                  <ol className="explanation" aria-label="Explanation">
+                    {hint.text.explanation.map((step) => (
+                      <li key={step}>{step}</li>
+                    ))}
+                  </ol>
+                )}
+              </>
+            )}
+          </section>
+        )}
+
         <ol className="moves" aria-label="Moves">
           {moveRows(s.san).map((row) => (
             <li key={row}>{row}</li>
@@ -96,6 +146,15 @@ export function PlayScreen({ session, elo, onNewGame }: Props) {
         </ol>
 
         <div className="actions">
+          {hintLabel && (
+            <button
+              type="button"
+              disabled={hint.status === 'thinking'}
+              onClick={() => void hints.more({ fen: s.fen, moves: s.moves })}
+            >
+              {hintLabel}
+            </button>
+          )}
           {s.error && (
             <button type="button" className="primary" onClick={() => void session.retryOpponent()}>
               Retry
