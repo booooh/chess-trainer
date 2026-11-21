@@ -158,3 +158,54 @@ describe('GameSession', () => {
     expect(session.isPromotion('e4', 'e5')).toBe(false);
   });
 });
+
+describe('GameSession: starting position and hints', () => {
+  const FORK = '4k3/7p/q7/1N6/8/8/7P/4K3 w - - 0 1';
+
+  it('can start from a given position, and records it', async () => {
+    const records: GameRecord[] = [];
+    const { opponent } = scriptedOpponent();
+    const session = new GameSession({ userColor: 'white', opponent, startFen: FORK, onFinished: (r) => void records.push(r) });
+    expect(session.state.fen).toBe(FORK);
+    session.resign();
+    expect(records[0]).toMatchObject({ startFen: FORK, moves: [] });
+    expect(records[0]!.pgn).toContain(`[FEN "${FORK}"]`);
+  });
+
+  it('leaves startFen out of the record for a normal game', () => {
+    const records: GameRecord[] = [];
+    const { opponent } = scriptedOpponent();
+    const session = new GameSession({ userColor: 'white', opponent, onFinished: (r) => void records.push(r) });
+    session.resign();
+    expect(records[0]).not.toHaveProperty('startFen');
+  });
+
+  it('records the highest hint level used for each of the user’s moves', async () => {
+    const records: GameRecord[] = [];
+    const { opponent, reply } = scriptedOpponent('e7e5');
+    const session = new GameSession({ userColor: 'white', opponent, onFinished: (r) => void records.push(r) });
+    await session.start();
+    session.noteHint(1);
+    session.noteHint(3);
+    session.noteHint(2); // going back down doesn't lower it
+    const done = session.playUserMove('e2e4');
+    await reply();
+    await done;
+    session.noteHint(4); // the user's second move is ply 2
+    session.resign();
+    expect(records[0]!.hintsUsed).toEqual([
+      { ply: 0, level: 3 },
+      { ply: 2, level: 4 },
+    ]);
+  });
+
+  it("ignores hints when it isn't the user's turn", async () => {
+    const records: GameRecord[] = [];
+    const { opponent } = scriptedOpponent('d2d4');
+    const session = new GameSession({ userColor: 'black', opponent, onFinished: (r) => void records.push(r) });
+    void session.start(); // the opponent is thinking
+    session.noteHint(2);
+    session.resign();
+    expect(records[0]!.hintsUsed).toEqual([]);
+  });
+});

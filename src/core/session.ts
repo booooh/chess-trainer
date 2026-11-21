@@ -1,5 +1,5 @@
 import { Game, type Color, type GameStatus, type GameResult, type Square, type Uci } from './game';
-import type { GameRecord } from './records';
+import type { GameRecord, HintLevel } from './records';
 
 /** Anything that can pick a move for the computer side (MaiaOpponent, or a fake in tests). */
 export interface Opponent {
@@ -29,6 +29,8 @@ export type SessionState = {
 export type SessionOptions = {
   userColor: Color;
   opponent: Opponent;
+  /** Start from this position instead of the usual one (e.g. a practice position). */
+  startFen?: string;
   /** Called once when the game ends, with the record to store. */
   onFinished?: (record: GameRecord) => void | Promise<void>;
   now?: () => Date;
@@ -40,7 +42,9 @@ export type SessionOptions = {
  * for moves, and producing the game record at the end. The UI subscribes to `state`.
  */
 export class GameSession {
-  private readonly game = new Game();
+  private readonly game: Game;
+  /** Highest hint level used for each of the user's moves, by ply (index into the moves). */
+  private readonly hints = new Map<number, HintLevel>();
   private readonly listeners = new Set<() => void>();
   private readonly abort = new AbortController();
   private readonly startedAt: Date;
@@ -50,6 +54,7 @@ export class GameSession {
   private snapshot: SessionState;
 
   constructor(private readonly options: SessionOptions) {
+    this.game = new Game(options.startFen);
     this.startedAt = (options.now ?? (() => new Date()))();
     this.snapshot = this.buildState();
   }
@@ -87,6 +92,16 @@ export class GameSession {
   /** Tries the opponent's move again after an error. */
   async retryOpponent(): Promise<void> {
     if (this.isOpponentsTurn() && !this.thinking) await this.opponentMove();
+  }
+
+  /**
+   * Notes that the user looked at a hint of this level for the move they're about to play.
+   * Only the highest level per move is kept (DESIGN §5.1). Ignored when it isn't their turn.
+   */
+  noteHint(level: HintLevel): void {
+    if (this.thinking || this.isOpponentsTurn() || this.game.isOver) return;
+    const ply = this.game.moves.length;
+    this.hints.set(ply, Math.max(level, this.hints.get(ply) ?? 0) as HintLevel);
   }
 
   resign(): void {
@@ -173,7 +188,8 @@ export class GameSession {
         Black: userColor === 'black' ? you : maia,
       }),
       result: this.game.result,
-      hintsUsed: [],
+      hintsUsed: [...this.hints].sort(([a], [b]) => a - b).map(([ply, level]) => ({ ply, level })),
+      ...(this.options.startFen ? { startFen: this.options.startFen } : {}),
       schemaVersion: 1,
     };
   }
