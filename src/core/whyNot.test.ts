@@ -111,3 +111,39 @@ describe('CoachingChecker', () => {
     expect(prepared).toEqual([FORK]);
   });
 });
+
+describe('CoachingChecker in a quiet position (the hint has no tactic)', () => {
+  // Qd2 is the hint, for no particular reason. Qd3 is a bit worse; Qc2 a lot worse.
+  const QUIET = '4k3/8/4p3/8/8/8/8/3QK3 w - - 0 1';
+  const from = (...moves: Uci[]) => {
+    const g = new Game(QUIET);
+    for (const m of moves) g.play(m);
+    return g.fen;
+  };
+  const quietAnswers = new Map<string, Line[]>([
+    [QUIET, [line(cp(120), 'd1d2', 'e8e7', 'd2d3')]],
+    [from('d1d2', 'e8e7'), [line(cp(120), 'd2d3')]],
+    [from('d1d3'), [line(cp(-20), 'e8e7')]],
+    [from('d1d3', 'e8e7'), [line(cp(20), 'd3d4')]],
+    [from('d1c2'), [line(cp(150), 'e8e7')]],
+    [from('d1c2', 'e8e7'), [line(cp(-150), 'c2c3')]],
+  ]);
+  const quietEngine: Engine = { analyse: async (fen) => quietAnswers.get(fen) ?? [] };
+  const quietPredictor: HumanMovePredictor = { predict: async () => new Map([['e8e7', 1]]) };
+  const deps = { engine: quietEngine, predictor: quietPredictor };
+  const here: Position = { fen: QUIET, moves: [] };
+
+  it('lets a slightly worse move through when there is nothing concrete to say', async () => {
+    const hint = await buildTeachingLine({ ...request, fen: QUIET }, deps);
+    expect(await checker(hint, undefined, deps).check(here, 'd1d3', signal())).toBeNull(); // 1 pawn worse
+  });
+
+  it('still stops a move that loses as much as a blunder, even without a concrete reason', async () => {
+    const hint = await buildTeachingLine({ ...request, fen: QUIET }, deps);
+    expect(await checker(hint, undefined, deps).check(here, 'd1c2', signal())).toEqual({
+      kind: 'whyNot',
+      steps: ['After Qc2, most players reply Ke7.', 'Qd2 was better: Stockfish rates it about 3 pawns higher.'],
+      better: { from: 'd1', to: 'd2', san: 'Qd2' },
+    });
+  });
+});
